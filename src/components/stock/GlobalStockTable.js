@@ -1,14 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { getGlobalStockView } from "@/lib/services/stocksService"
 
-export default function GlobalStockTable() {
+export default function GlobalStockTable({ highlightLocationId = null }) {
 
   const [products, setProducts] = useState([])
   const [locations, setLocations] = useState([])
   const [search, setSearch] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("all")
 
   useEffect(() => {
     fetchData()
@@ -20,105 +19,190 @@ export default function GlobalStockTable() {
     setLocations(data.locations || [])
   }
 
-  const categories = [
-    "all",
-    ...Array.from(new Set(products.map(p => p.category)))
-  ]
+  /* ========================= */
+  /* FILTERING */
+  /* ========================= */
 
-  const filtered = products
-    .filter(p =>
+  const filtered = useMemo(() => {
+    return products.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase())
     )
-    .filter(p =>
-      selectedCategory === "all" ||
-      p.category === selectedCategory
-    )
+  }, [products, search])
+
+  /* ========================= */
+  /* GROUP BY CATEGORY */
+  /* ========================= */
+
+  const grouped = useMemo(() => {
+    return filtered.reduce((acc, product) => {
+      const cat = product.category || "Sans catégorie"
+      if (!acc[cat]) acc[cat] = []
+      acc[cat].push(product)
+      return acc
+    }, {})
+  }, [filtered])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
 
-      <div className="flex gap-4 items-center">
+      {/* SEARCH */}
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <input
           placeholder="Rechercher produit..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border px-3 py-2 rounded-lg"
+          className="
+            w-full sm:w-72
+            border border-slate-300
+            px-4 py-2
+            rounded-lg
+            text-sm
+            focus:outline-none
+            focus:ring-2
+            focus:ring-slate-400
+          "
         />
-
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="border px-3 py-2 rounded-lg"
-        >
-          {categories.map(cat => (
-            <option key={cat} value={cat}>
-              {cat === "all" ? "Toutes catégories" : cat}
-            </option>
-          ))}
-        </select>
       </div>
 
-      <div className="overflow-x-auto bg-white rounded-2xl shadow">
-        <table className="min-w-full text-sm">
+      {Object.entries(grouped).map(([category, items]) => {
 
-          <thead className="bg-slate-100 uppercase text-xs text-slate-600">
-            <tr>
-              <th className="px-4 py-3 text-left">Produit</th>
-              <th className="px-4 py-3 text-left">Catégorie</th>
+        const poleLocations = locations.filter(l => l.type === "pole")
+        const reserveLocations = locations.filter(l => l.type === "reserve")
 
-              {locations.map(loc => (
-                <th key={loc.id} className="px-4 py-3 text-center">
-                  {loc.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
+        const currentPole = poleLocations.find(l => l.id === highlightLocationId)
+        const otherPoles = poleLocations.filter(l => l.id !== highlightLocationId)
 
-          <tbody className="divide-y">
+        return (
 
-            {filtered.map(product => (
-              <tr key={product.product_id} className="hover:bg-slate-50">
+          <div key={category} className="space-y-4">
 
-                <td className="px-4 py-3 font-medium">
-                  {product.name}
-                </td>
+            {/* CATEGORY TITLE */}
+            <h2 className="text-lg sm:text-xl font-semibold text-slate-800">
+              {category}
+            </h2>
 
-                <td className="px-4 py-3 text-slate-500">
-                  {product.category}
-                </td>
+            <div className="overflow-x-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
 
-                {locations.map(loc => {
+              <table className="min-w-[700px] w-full text-sm">
 
-                  const data = product.locations[loc.id]
-                  const qty = data?.quantity ?? 0
-                  const threshold = data?.threshold ?? 5
+                <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="sticky left-0 bg-slate-100 z-10 px-4 py-3 text-left">
+                      Produit
+                    </th>
 
-                  const isOut = qty === 0
-                  const isLow = qty > 0 && qty <= threshold
+                    {currentPole && (
+                      <th className="px-4 py-3 text-center bg-slate-200">
+                        {currentPole.name}
+                      </th>
+                    )}
 
-                  return (
-                    <td
-                      key={loc.id}
-                      className={`px-4 py-3 text-center font-semibold ${
-                        isOut
-                          ? "text-red-700"
-                          : isLow
-                          ? "text-orange-600"
-                          : ""
-                      }`}
+                    {otherPoles.map(loc => (
+                      <th key={loc.id} className="px-4 py-3 text-center">
+                        {loc.name}
+                      </th>
+                    ))}
+
+                    {reserveLocations.map(loc => (
+  <th
+    key={loc.id}
+    className="px-4 py-3 text-center text-slate-500 border-l border-slate-200"
+  >
+    {loc.name}
+  </th>
+))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+
+                  {items.map((product, index) => (
+
+                    <tr
+                      key={product.product_id}
+                      className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
                     >
-                      {qty}
-                    </td>
-                  )
-                })}
 
-              </tr>
-            ))}
+                      {/* PRODUCT NAME (STICKY MOBILE) */}
+                      <td className="sticky left-0 bg-inherit px-4 py-3 font-medium text-slate-900">
+                        {product.name}
+                      </td>
 
-          </tbody>
-        </table>
-      </div>
+                      {/* CURRENT POLE */}
+                      {currentPole && (
+                        <StockCell
+                          product={product}
+                          location={currentPole}
+                          highlight
+                        />
+                      )}
+
+                      {/* OTHER POLES */}
+                      {otherPoles.map(loc => (
+                        <StockCell
+                          key={loc.id}
+                          product={product}
+                          location={loc}
+                        />
+                      ))}
+
+                      {/* RESERVES (GROUPED VISUALLY) */}
+                      {reserveLocations.map(loc => (
+                        <StockCell
+                          key={loc.id}
+                          product={product}
+                          location={loc}
+                          isReserve
+                        />
+                      ))}
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+        )
+      })}
 
     </div>
+  )
+}
+
+/* ========================= */
+/* STOCK CELL */
+/* ========================= */
+
+function StockCell({ product, location, highlight, isReserve }) {
+
+  const data = product.locations[location.id]
+  const qty = data?.quantity ?? 0
+  const threshold = data?.threshold ?? 5
+
+  const isOut = qty === 0
+  const isLow = qty > 0 && qty <= threshold
+
+  return (
+    <td
+      className={`
+        px-4 py-3 text-center font-semibold
+        ${highlight ? "bg-slate-100" : ""}
+        ${isReserve ? "text-slate-500" : ""}
+        ${
+          isOut
+            ? "text-red-700"
+            : isLow
+            ? "text-orange-600"
+            : "text-slate-800"
+        }
+      `}
+    >
+      {qty}
+    </td>
   )
 }

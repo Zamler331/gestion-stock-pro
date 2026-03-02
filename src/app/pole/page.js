@@ -12,8 +12,10 @@ export default function PolePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [locationId, setLocationId] = useState(null)
+  const [locationName, setLocationName] = useState("")
 
   useEffect(() => {
+    console.log("POLETABS locationId:", locationId)
     checkAccess()
   }, [])
 
@@ -38,6 +40,17 @@ export default function PolePage() {
 
     setLocationId(profile.location_id)
     setLoading(false)
+
+    // récupérer le nom du lieu
+const { data: location } = await supabase
+  .from("locations")
+  .select("name")
+  .eq("id", profile.location_id)
+  .single()
+
+if (location) {
+  setLocationName(location.name)
+}
   }
 
   if (loading) {
@@ -47,10 +60,13 @@ export default function PolePage() {
    return (
     <div className="min-h-screen bg-slate-200">
 
-      <Navbar title="Espace Pôle" role="Pôle" />
+      <Navbar
+  title={`Espace Pôle — ${locationName}`}
+  role="Pôle"
+/>
 
       <div className="max-w-6xl mx-auto px-6 py-10">
-        <PoleTabs />
+        <PoleTabs locationId={locationId} />
       </div>
 
     </div>

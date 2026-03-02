@@ -23,10 +23,11 @@ export default function MessagingTab({ locationId }) {
   async function fetchMessages() {
 
     const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("location_id", locationId)
-      .order("created_at", { ascending: true })
+  .from("messages")
+  .select("*")
+  .eq("location_id", locationId)
+  .eq("receiver_role", "pole")
+  .order("created_at", { ascending: true })
 
     setMessages(data || [])
 

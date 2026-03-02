@@ -3,10 +3,8 @@
 import { useState } from "react"
 
 import OrdersTab from "./OrdersTab"
-import CommonStocksTab from "./CommonStocksTab"
-import MovementsTab from "./MovementsTab"
 import MessagingTab from "./MessagingTab"
-import StockTab from "./StockTab"
+import GlobalStockTable from "@/components/stock/GlobalStockTable"
 
 export default function PoleTabs({ locationId }) {
 
@@ -18,7 +16,7 @@ export default function PoleTabs({ locationId }) {
     { id: "messages", label: "Messagerie" }
   ]
 
-return (
+  return (
     <div className="space-y-8">
 
       {/* TABS */}
@@ -31,9 +29,10 @@ return (
             onClick={() => setActiveTab(tab.id)}
             className={`
               px-4 py-2 text-sm font-medium rounded-xl transition-all
-              ${activeTab === tab.id
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-600 hover:bg-white hover:shadow-sm"
+              ${
+                activeTab === tab.id
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white hover:shadow-sm"
               }
             `}
           >
@@ -47,27 +46,20 @@ return (
       {/* CONTENT */}
       <div>
 
-        {activeTab === "orders" && <OrdersTab />}
-        {activeTab === "stock" && <StockTab />}
-        {activeTab === "messages" && <MessagingTab />}
+        {activeTab === "orders" && (
+          <OrdersTab />
+        )}
+
+        {activeTab === "stock" && (
+          <GlobalStockTable highlightLocationId={locationId} />
+        )}
+
+        {activeTab === "messages" && (
+          <MessagingTab locationId={locationId} />
+        )}
 
       </div>
 
     </div>
-  )
-}
-
-function TabButton({ label, value, activeTab, setActiveTab }) {
-  return (
-    <button
-      onClick={() => setActiveTab(value)}
-      className={`px-4 py-2 rounded-t font-medium ${
-        activeTab === value
-          ? "bg-blue-600 text-white"
-          : "bg-gray-200 hover:bg-gray-300"
-      }`}
-    >
-      {label}
-    </button>
   )
 }
