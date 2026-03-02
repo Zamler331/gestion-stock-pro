@@ -26,16 +26,25 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="fr">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-       <ServiceWorkerRegister />
-       <OfflineIndicator />
-       <PendingBadge />
-       <SyncIndicator />
-       {children}
-      </body>
-    </html>
-  );
+  <html lang="fr">
+    <body
+      className={`
+        ${geistSans.variable} 
+        ${geistMono.variable} 
+        antialiased 
+        bg-slate-200 
+        text-slate-900
+        min-h-screen
+      `}
+    >
+      <ServiceWorkerRegister />
+      <OfflineIndicator />
+      <PendingBadge />
+      <SyncIndicator />
+
+      {children}
+
+    </body>
+  </html>
+);
 }
