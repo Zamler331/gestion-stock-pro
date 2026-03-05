@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { useBugReport } from "@/app/providers/BugReportProvider"
 
 export default function Navbar({ title, role }) {
 
   const router = useRouter()
+  const { openBug } = useBugReport()
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -31,6 +33,17 @@ export default function Navbar({ title, role }) {
           )}
 
         </div>
+
+        <div className="flex items-center gap-4">
+
+  <button
+  onClick={() => openBug(role)}
+  className="text-xs text-red-600 hover:text-red-700"
+>
+  🐞 Signaler un bug
+</button>
+
+  </div>
 
         {/* RIGHT */}
         <button

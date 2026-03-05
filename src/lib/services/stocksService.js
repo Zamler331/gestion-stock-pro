@@ -2,65 +2,110 @@ import { supabase } from "@/lib/supabase"
 
 export async function getGlobalStockView() {
 
-  // 1️⃣ Tous les lieux
-  const { data: locations } = await supabase
-    .from("locations")
-    .select("*")
-    .order("name")
+  try {
 
-  // 2️⃣ Tous les stocks
-  const { data: stocks } = await supabase
-    .from("stocks")
-    .select(`
-      quantity,
-      location_id,
-      product_id,
-      products (
-        id,
-        name,
-        category_id,
-        categories (
-          name
+    /* ========================= */
+    /* LOCATIONS */
+    /* ========================= */
+
+    const { data: locations, error: locationsError } = await supabase
+      .from("locations")
+      .select("*")
+      .order("name")
+
+    if (locationsError) {
+      console.error("Erreur locations:", locationsError)
+      return { products: [], locations: [] }
+    }
+
+    /* ========================= */
+    /* STOCKS */
+    /* ========================= */
+
+    const { data: stocks, error: stocksError } = await supabase
+      .from("stocks")
+      .select(`
+        quantity,
+        location_id,
+        product_id,
+        products:product_id (
+          id,
+          name,
+          packaging,
+          category_id,
+          categories (
+            name
+          )
         )
-      )
-    `)
+      `)
 
-  // 3️⃣ Seuils personnalisés
-  const { data: thresholds } = await supabase
-    .from("product_location_settings")
-    .select("*")
+    if (stocksError) {
+      console.error("Erreur stocks:", stocksError)
+      return { products: [], locations }
+    }
 
-  const thresholdMap = {}
-  thresholds?.forEach(t => {
-    thresholdMap[`${t.product_id}-${t.location_id}`] = t.low_stock_threshold
-  })
+    /* ========================= */
+    /* THRESHOLDS */
+    /* ========================= */
 
-  // 4️⃣ Transformation pivot
-  const formatted = []
+    const { data: thresholds, error: thresholdError } = await supabase
+      .from("product_location_settings")
+      .select("*")
 
-  const productsMap = {}
+    if (thresholdError) {
+      console.error("Erreur thresholds:", thresholdError)
+    }
 
-  stocks?.forEach(stock => {
+    const thresholdMap = {}
 
-    if (!productsMap[stock.product_id]) {
-      productsMap[stock.product_id] = {
-        product_id: stock.product_id,
-        name: stock.products?.name,
-        category: stock.products?.categories?.name || "Sans catégorie",
-        locations: {}
+    thresholds?.forEach(t => {
+      thresholdMap[`${t.product_id}-${t.location_id}`] =
+        t.low_stock_threshold
+    })
+
+    /* ========================= */
+    /* PIVOT PRODUCTS */
+    /* ========================= */
+
+    const productsMap = {}
+
+    stocks?.forEach(stock => {
+
+      if (!productsMap[stock.product_id]) {
+
+        productsMap[stock.product_id] = {
+          product_id: stock.product_id,
+          name: stock.products?.name,
+          packaging: stock.products?.packaging || null,
+          category: stock.products?.categories?.name || "Sans catégorie",
+          locations: {}
+        }
+
       }
+
+      const key = `${stock.product_id}-${stock.location_id}`
+
+      productsMap[stock.product_id].locations[stock.location_id] = {
+        quantity: stock.quantity,
+        threshold: thresholdMap[key] ?? 5
+      }
+
+    })
+
+    return {
+      products: Object.values(productsMap),
+      locations
     }
 
-    const key = `${stock.product_id}-${stock.location_id}`
+  } catch (err) {
 
-    productsMap[stock.product_id].locations[stock.location_id] = {
-      quantity: stock.quantity,
-      threshold: thresholdMap[key] ?? 5
+    console.error("Erreur getGlobalStockView:", err)
+
+    return {
+      products: [],
+      locations: []
     }
-  })
 
-  return {
-    products: Object.values(productsMap),
-    locations
   }
+
 }
