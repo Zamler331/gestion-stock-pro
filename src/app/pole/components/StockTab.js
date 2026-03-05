@@ -14,62 +14,76 @@ export default function StockTab({ locationId }) {
 
   async function fetchStocks() {
 
-    setLoading(true)
+    try {
 
-    // 1️⃣ Récupérer l’ID de la réserve
-    const { data: reserve } = await supabase
-      .from("locations")
-      .select("id")
-      .eq("type", "reserve")
-      .limit(1)
-      .single()
+      setLoading(true)
 
-    const reserveId = reserve?.id
+      const { data: reserves, error: reserveError } = await supabase
+        .from("locations")
+        .select("id")
+        .eq("type", "reserve")
 
-    // 2️⃣ Récupérer tous les stocks pôle + réserve
-    const { data } = await supabase
-      .from("stocks")
-      .select(`
-        product_id,
-        quantity,
-        location_id,
-        products (
-          name
-        )
-      `)
-      .in("location_id", [locationId, reserveId])
+      if (reserveError) {
+        console.error("Erreur reserves :", reserveError)
+        return
+      }
 
-    if (!data) {
-      setRows([])
-      setLoading(false)
-      return
-    }
+      const reserveIds = reserves?.map(r => r.id) || []
+      const reserveSet = new Set(reserveIds)
 
-    // 3️⃣ Fusion par produit
-    const merged = {}
+      const { data, error } = await supabase
+        .from("stocks")
+        .select(`
+          product_id,
+          quantity,
+          location_id,
+          products:product_id (
+            name,
+            packaging
+          )
+        `)
+        .in("location_id", [locationId, ...reserveIds])
 
-    data.forEach(item => {
+      if (error) {
+        console.error("Erreur stocks :", error)
+        setRows([])
+        return
+      }
 
-      if (!merged[item.product_id]) {
-        merged[item.product_id] = {
-          name: item.products?.name,
-          poleStock: 0,
-          reserveStock: 0
+      const merged = {}
+
+      data.forEach(item => {
+
+        if (!merged[item.product_id]) {
+          merged[item.product_id] = {
+            name: item.products?.name,
+            packaging: item.products?.packaging,
+            poleStock: 0,
+            reserveStock: 0
+          }
         }
-      }
 
-      if (item.location_id === locationId) {
-        merged[item.product_id].poleStock = item.quantity
-      }
+        if (item.location_id === locationId) {
+          merged[item.product_id].poleStock = item.quantity
+        }
 
-      if (item.location_id === reserveId) {
-        merged[item.product_id].reserveStock = item.quantity
-      }
+        if (reserveSet.has(item.location_id)) {
+          merged[item.product_id].reserveStock += item.quantity
+        }
 
-    })
+      })
 
-    setRows(Object.values(merged))
-    setLoading(false)
+      setRows(Object.values(merged))
+
+    } catch (err) {
+
+      console.error("Erreur fetchStocks :", err)
+
+    } finally {
+
+      setLoading(false)
+
+    }
   }
 
   return (
@@ -99,7 +113,7 @@ export default function StockTab({ locationId }) {
               <tr>
                 <th className="px-6 py-4 text-left">Produit</th>
                 <th className="px-6 py-4 text-center">Stock Pôle</th>
-                <th className="px-6 py-4 text-center">Stock Réserve</th>
+                <th className="px-6 py-4 text-center">Stock Réserves</th>
               </tr>
             </thead>
 
@@ -112,8 +126,18 @@ export default function StockTab({ locationId }) {
                   className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
                 >
 
-                  <td className="px-6 py-4 font-medium text-slate-900">
-                    {row.name}
+                  <td className="px-6 py-4 text-slate-900">
+
+                    <div className="font-medium">
+                      {row.name}
+                    </div>
+
+                    {row.packaging && (
+                      <div className="text-xs text-slate-400 mt-1">
+                        {row.packaging}
+                      </div>
+                    )}
+
                   </td>
 
                   <td className="px-6 py-4 text-center font-semibold">

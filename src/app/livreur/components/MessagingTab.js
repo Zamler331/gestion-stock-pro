@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import Card from "@/components/ui/Card"
 import Button from "@/components/ui/Button"
@@ -12,6 +12,33 @@ export default function MessagingTab() {
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState("")
+  const [userId, setUserId] = useState(null)
+
+  const messagesEndRef = useRef(null)
+
+  /* ========================= */
+  /* INIT USER */
+  /* ========================= */
+
+  useEffect(() => {
+
+    async function getUser() {
+
+      const { data: { user }, error } =
+        await supabase.auth.getUser()
+
+      if (error) {
+        console.error("Erreur auth :", error)
+        return
+      }
+
+      if (user) setUserId(user.id)
+
+    }
+
+    getUser()
+
+  }, [])
 
   /* ========================= */
   /* FETCH CONVERSATIONS */
@@ -19,43 +46,60 @@ export default function MessagingTab() {
 
   async function fetchConversations() {
 
-  const { data } = await supabase
-    .from("messages")
-    .select(`
-      location_id,
-      read,
-      receiver_role,
-      locations (
-        id,
-        name
-      )
-    `)
-    .order("created_at", { ascending: false })
+    const { data, error } = await supabase
+  .from("messages")
+  .select(`
+    location_id,
+    read,
+    receiver_role,
+    locations!messages_location_id_fkey (
+      id,
+      name
+    )
+  `)
+  .order("created_at", { ascending: false })
 
-  const grouped = {}
+    const grouped = {}
 
-  data?.forEach(msg => {
+    data?.forEach(msg => {
 
-    if (!grouped[msg.location_id]) {
-      grouped[msg.location_id] = {
-        location_id: msg.location_id,
-        name: msg.locations?.name,
-        unread: 0
-      }
+  if (!msg.location_id) return
+
+  const locationName = msg.locations?.name || "Lieu inconnu"
+
+  if (!grouped[msg.location_id]) {
+
+    grouped[msg.location_id] = {
+      location_id: msg.location_id,
+      name: locationName,
+      unread: 0
     }
 
-    // Compteur non lu
-    if (
-      msg.receiver_role === "livreur" &&
-      msg.read === false
-    ) {
-      grouped[msg.location_id].unread++
-    }
+  }
 
-  })
+  if (
+    msg.receiver_role === "livreur" &&
+    msg.read === false
+  ) {
+    grouped[msg.location_id].unread++
+  }
 
-  setConversations(Object.values(grouped))
+  if (!data) {
+  setConversations([])
+  return
 }
+
+if (!data) {
+  console.log("Aucun message")
+  setConversations([])
+  return
+}
+
+})
+
+    setConversations(Object.values(grouped))
+
+  }
 
   useEffect(() => {
     fetchConversations()
@@ -66,15 +110,20 @@ export default function MessagingTab() {
   /* ========================= */
 
   async function fetchMessages(locationId) {
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("location_id", locationId)
       .order("created_at", { ascending: true })
 
+    if (error) {
+      console.error("Erreur messages :", error)
+      return
+    }
+
     setMessages(data || [])
 
-    // Marquer comme lus
     await supabase
       .from("messages")
       .update({ read: true })
@@ -92,23 +141,34 @@ export default function MessagingTab() {
   useEffect(() => {
 
     const channel = supabase
-      .channel("messages-realtime")
+      .channel("livreur-messages")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
-          table: "messages"
+          table: "messages",
+          filter: `receiver_role=eq.livreur`
         },
         (payload) => {
 
           const newMsg = payload.new
 
           if (newMsg.location_id === selectedLocation) {
-            setMessages(prev => [...prev, newMsg])
+
+            setMessages(prev => {
+
+              if (prev.find(m => m.id === newMsg.id))
+                return prev
+
+              return [...prev, newMsg]
+
+            })
+
           }
 
           fetchConversations()
+
         }
       )
       .subscribe()
@@ -120,35 +180,56 @@ export default function MessagingTab() {
   }, [selectedLocation])
 
   /* ========================= */
+  /* AUTO SCROLL */
+  /* ========================= */
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
+
+  /* ========================= */
   /* SEND */
   /* ========================= */
 
   async function sendMessage() {
-    if (!newMessage.trim() || !selectedLocation) return
 
-    const { data: { user } } = await supabase.auth.getUser()
+    if (!newMessage.trim() || !selectedLocation || !userId)
+      return
 
-    await supabase.from("messages").insert([{
-      sender_id: user.id,
-      receiver_role: "pole",
-      location_id: selectedLocation,
-      content: newMessage,
-      type: "message",
-      read: false
-    }])
+    const { error } = await supabase
+      .from("messages")
+      .insert([{
+        sender_id: userId,
+        receiver_role: "pole",
+        location_id: selectedLocation,
+        content: newMessage,
+        type: "message",
+        read: false
+      }])
+
+    if (error) {
+      console.error("Erreur message :", error)
+      return
+    }
 
     setNewMessage("")
+
   }
-
-  /* ========================= */
-  /* UI */
-  /* ========================= */
-
   return (
   <Card className="p-0 overflow-hidden h-[600px] flex">
 
-    {/* COLONNE GAUCHE */}
+    {/* SIDEBAR CONVERSATIONS */}
     <div className="w-1/3 border-r border-slate-200 overflow-y-auto bg-white">
+
+      <div className="px-5 py-4 border-b font-semibold text-slate-800">
+        Conversations
+      </div>
+
+      {conversations.length === 0 && (
+        <div className="p-5 text-sm text-slate-500">
+          Aucune conversation
+        </div>
+      )}
 
       {conversations.map(conv => {
 
@@ -163,10 +244,7 @@ export default function MessagingTab() {
             }}
             className={`
               px-5 py-4 cursor-pointer flex justify-between items-center
-              transition-all duration-200
-              ${isActive
-                ? "bg-slate-100"
-                : "hover:bg-slate-50"}
+              ${isActive ? "bg-slate-100" : "hover:bg-slate-50"}
             `}
           >
             <span className="text-sm font-medium text-slate-800">
@@ -178,21 +256,23 @@ export default function MessagingTab() {
                 {conv.unread}
               </Badge>
             )}
+
           </div>
         )
       })}
 
     </div>
 
-    {/* COLONNE DROITE */}
-    <div className="w-2/3 flex flex-col bg-white">
+
+    {/* ZONE CHAT */}
+    <div className="flex flex-col w-2/3 bg-white">
 
       {/* MESSAGES */}
       <div className="flex-1 p-6 overflow-y-auto space-y-4">
 
         {messages.map(msg => {
 
-          const isMine = msg.receiver_role === "pole"
+          const isMine = msg.sender_id === userId
 
           return (
             <div
@@ -201,35 +281,40 @@ export default function MessagingTab() {
             >
               <div
                 className={`
-                  px-4 py-2 rounded-2xl max-w-xs text-sm
+                  px-4 py-2 rounded-2xl max-w-[75%] text-sm
                   ${isMine
-                    ? "bg-blue-800 text-white"
+                    ? "bg-blue-700 text-white"
                     : "bg-slate-100 text-slate-800"}
                 `}
               >
                 {msg.content}
+
+                <div className="text-xs opacity-70 mt-1">
+                  {new Date(msg.created_at).toLocaleString("fr-FR")}
+                </div>
+
               </div>
             </div>
           )
         })}
 
+        <div ref={messagesEndRef} />
+
       </div>
 
-      {/* INPUT */}
+
+      {/* INPUT MESSAGE */}
       {selectedLocation && (
-        <div className="p-4 border-t border-slate-200 flex gap-3 bg-white">
+        <div className="p-4 border-t border-slate-200 flex gap-3">
 
           <input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Écrire un message..."
-            className="flex-1"
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
           />
 
-          <Button
-            variant="primary"
-            onClick={sendMessage}
-          >
+          <Button onClick={sendMessage}>
             Envoyer
           </Button>
 
@@ -241,3 +326,4 @@ export default function MessagingTab() {
   </Card>
 )
 }
+

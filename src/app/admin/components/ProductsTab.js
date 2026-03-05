@@ -11,6 +11,7 @@ export default function ProductsTab() {
 
   const [newProductName, setNewProductName] = useState("")
   const [newProductCategory, setNewProductCategory] = useState("")
+  const [newProductPackaging, setNewProductPackaging] = useState("")
 
   const [newCategoryName, setNewCategoryName] = useState("")
   const [search, setSearch] = useState("")
@@ -26,7 +27,8 @@ export default function ProductsTab() {
       .select(`
         id,
         name,
-        category_id
+        category_id,
+        packaging
       `)
       .order("name")
 
@@ -67,42 +69,63 @@ export default function ProductsTab() {
   async function createCategory() {
     if (!newCategoryName.trim()) return
 
-    await supabase.from("categories").insert([{
-      name: newCategoryName
-    }])
+    await supabase.from("categories").insert([
+      { name: newCategoryName }
+    ])
 
     setNewCategoryName("")
     fetchData()
   }
 
   async function createProduct() {
-    if (!newProductName.trim()) return
 
-    const { data } = await supabase
+  if (!newProductName.trim()) return
+
+  try {
+
+    const { data, error } = await supabase
       .from("products")
       .insert([{
         name: newProductName,
-        category_id: newProductCategory || null
+        category_id: newProductCategory || null,
+        packaging: newProductPackaging || null
       }])
       .select()
       .single()
 
-    // créer stocks initiaux à 0 pour chaque location
+    if (error) throw error
+
     const { data: locations } = await supabase
       .from("locations")
       .select("id")
 
-    for (const loc of locations || []) {
-      await supabase.from("stocks").insert([{
-        product_id: data.id,
-        location_id: loc.id,
-        quantity: 0
-      }])
-    }
+    const stocksPayload = (locations || []).map(loc => ({
+      product_id: data.id,
+      location_id: loc.id,
+      quantity: 0
+    }))
+
+    await supabase.from("stocks").insert(stocksPayload)
 
     setNewProductName("")
     setNewProductCategory("")
+    setNewProductPackaging("")
+
     fetchData()
+
+  } catch (err) {
+
+    console.error("Erreur createProduct:", err)
+
+  }
+
+}
+
+  async function updatePackaging(productId, value) {
+    await supabase
+      .from("products")
+      .update({ packaging: value || null })
+      .eq("id", productId)
   }
 
   async function toggleVisibility(productId, locationId, isVisible) {
@@ -134,10 +157,7 @@ export default function ProductsTab() {
 
   async function deleteProduct(productId) {
 
-    const confirmDelete = window.confirm(
-      "Supprimer ce produit ?"
-    )
-
+    const confirmDelete = window.confirm("Supprimer ce produit ?")
     if (!confirmDelete) return
 
     await supabase.from("products").delete().eq("id", productId)
@@ -145,216 +165,216 @@ export default function ProductsTab() {
   }
 
   const filteredProducts = products.filter(p =>
-  p.name.toLowerCase().includes(search.toLowerCase())
-)
+    p.name.toLowerCase().includes(search.toLowerCase())
+  )
 
-const groupedProducts = filteredProducts.reduce((acc, product) => {
+  const groupedProducts = filteredProducts.reduce((acc, product) => {
 
-  const categoryName =
-    categories.find(c => c.id === product.category_id)?.name
-    || "Sans catégorie"
+    const categoryName =
+      categories.find(c => c.id === product.category_id)?.name
+      || "Sans catégorie"
 
-  if (!acc[categoryName]) {
-    acc[categoryName] = []
-  }
+    if (!acc[categoryName]) acc[categoryName] = []
+    acc[categoryName].push(product)
 
-  acc[categoryName].push(product)
+    return acc
 
-  return acc
+  }, {})
 
-}, {})
+  return (
+    <div className="space-y-12">
 
-return (
-  <div className="space-y-12">
-
-    {/* ================= CREATION CATEGORIE ================= */}
-
-    <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
-
-      <h2 className="text-lg font-semibold text-slate-900">
-        Ajouter une catégorie
-      </h2>
-
-      <div className="flex gap-3 flex-wrap">
-
-        <input
-          value={newCategoryName}
-          onChange={(e) => setNewCategoryName(e.target.value)}
-          placeholder="Nom catégorie"
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        />
-
-        <button
-          onClick={createCategory}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          Ajouter
-        </button>
-
-      </div>
-
-    </div>
-
-
-    {/* ================= CREATION PRODUIT ================= */}
-
-    <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
-
-      <h2 className="text-lg font-semibold text-slate-900">
-        Ajouter un produit
-      </h2>
-
-      <div className="flex gap-3 flex-wrap">
-
-        <input
-          value={newProductName}
-          onChange={(e) => setNewProductName(e.target.value)}
-          placeholder="Nom produit"
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        />
-
-        <select
-          value={newProductCategory}
-          onChange={(e) => setNewProductCategory(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        >
-          <option value="">Sans catégorie</option>
-          {categories.map(cat => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
-
-        <button
-          onClick={createProduct}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          Ajouter
-        </button>
-
-      </div>
-
-    </div>
-
-
-    {/* ================= RECHERCHE ================= */}
-
-    <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4">
-
-      <h2 className="text-lg font-semibold text-slate-900">
-        Rechercher un produit
-      </h2>
-
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Rechercher..."
-        className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-slate-400"
-      />
-
-    </div>
-
-
-    {/* ================= TABLEAUX PAR CATEGORIE ================= */}
-
-    {Object.entries(groupedProducts).map(([category, items]) => (
-
-      <div key={`category-${category}`} className="space-y-4">
-
-        <h2 className="text-base font-semibold text-slate-800">
-          {category}
+      {/* CREATION CATEGORIE */}
+      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Ajouter une catégorie
         </h2>
 
-        <div className="overflow-x-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
+        <div className="flex gap-3 flex-wrap">
+          <input
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            placeholder="Nom catégorie"
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
 
-          <table className="min-w-full text-sm">
+          <button
+            onClick={createCategory}
+            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            Ajouter
+          </button>
+        </div>
+      </div>
 
-            <thead className="bg-slate-100 text-xs uppercase text-slate-600 tracking-wide">
-              <tr>
-                <th className="px-4 py-3 text-left">Produit</th>
-                <th className="px-4 py-3 text-center">Catégorie</th>
+      {/* CREATION PRODUIT */}
+      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Ajouter un produit
+        </h2>
 
-                {poles.map(p => (
-                  <th key={p.id} className="px-4 py-3 text-center">
-                    {p.name}
-                  </th>
-                ))}
+        <div className="flex gap-3 flex-wrap">
+          <input
+            value={newProductName}
+            onChange={(e) => setNewProductName(e.target.value)}
+            placeholder="Nom produit"
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
 
-                <th className="px-4 py-3 text-center">Supprimer</th>
-              </tr>
-            </thead>
+          <input
+            value={newProductPackaging}
+            onChange={(e) => setNewProductPackaging(e.target.value)}
+            placeholder="Conditionnement (ex : 24x33cl)"
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
 
-            <tbody className="divide-y divide-slate-100">
+          <select
+            value={newProductCategory}
+            onChange={(e) => setNewProductCategory(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Sans catégorie</option>
+            {categories.map(cat => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
 
-              {items.map((product, index) => (
+          <button
+            onClick={createProduct}
+            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            Ajouter
+          </button>
+        </div>
+      </div>
 
-                <tr
-                  key={product.id}
-                  className="hover:bg-slate-50 transition-colors"
-                >
+      {/* RECHERCHE */}
+      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Rechercher un produit
+        </h2>
 
-                  <td className="px-4 py-3 font-medium text-slate-800">
-                    {product.name}
-                  </td>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher..."
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64"
+        />
+      </div>
 
-                  <td className="px-4 py-3 text-center">
-                    <select
-                      value={product.category_id || ""}
-                      onChange={(e) =>
-                        updateCategory(product.id, e.target.value)
-                      }
-                      className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                    >
-                      <option value="">Sans catégorie</option>
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
+      {/* TABLEAUX PAR CATEGORIE */}
+      {Object.entries(groupedProducts).map(([category, items]) => (
 
-                  {poles.map(pole => (
-                    <td key={pole.id} className="px-4 py-3 text-center">
-                      <input
-                        type="checkbox"
-                        checked={product.visibility?.[pole.id] || false}
-                        onChange={(e) =>
-                          toggleVisibility(
-                            product.id,
-                            pole.id,
-                            e.target.checked
-                          )
-                        }
-                        className="accent-slate-900"
-                      />
-                    </td>
+        <div key={`category-${category}`} className="space-y-4">
+
+          <h2 className="text-base font-semibold text-slate-800">
+            {category}
+          </h2>
+
+          <div className="overflow-x-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
+
+            <table className="min-w-full text-sm">
+
+              <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 text-left">Produit</th>
+                  <th className="px-4 py-3 text-center">Catégorie</th>
+
+                  {poles.map(p => (
+                    <th key={p.id} className="px-4 py-3 text-center">
+                      {p.name}
+                    </th>
                   ))}
 
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => deleteProduct(product.id)}
-                      className="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    >
-                      Supprimer
-                    </button>
-                  </td>
-
+                  <th className="px-4 py-3 text-center">Supprimer</th>
                 </tr>
+              </thead>
 
-              ))}
+              <tbody className="divide-y divide-slate-100">
 
-            </tbody>
+                {items.map(product => (
 
-          </table>
+                  <tr
+                    key={product.id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+
+                    <td className="px-4 py-3 text-slate-800">
+
+                      <div className="font-medium">
+                        {product.name}
+                      </div>
+
+                      <input
+                        defaultValue={product.packaging || ""}
+                        onBlur={(e) =>
+                          updatePackaging(product.id, e.target.value)
+                        }
+                        placeholder="Conditionnement..."
+                        className="mt-1 text-xs text-slate-500 border border-slate-200 rounded px-2 py-1 w-full"
+                      />
+
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <select
+                        value={product.category_id || ""}
+                        onChange={(e) =>
+                          updateCategory(product.id, e.target.value)
+                        }
+                        className="border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      >
+                        <option value="">Sans catégorie</option>
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {poles.map(pole => (
+                      <td key={pole.id} className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={product.visibility?.[pole.id] || false}
+                          onChange={(e) =>
+                            toggleVisibility(
+                              product.id,
+                              pole.id,
+                              e.target.checked
+                            )
+                          }
+                          className="accent-slate-900"
+                        />
+                      </td>
+                    ))}
+
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => deleteProduct(product.id)}
+                        className="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
+                      >
+                        Supprimer
+                      </button>
+                    </td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
 
         </div>
 
-      </div>
+      ))}
 
-    ))}
-
-  </div>
-)
+    </div>
+  )
 }

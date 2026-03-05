@@ -8,9 +8,13 @@ import StockTab from "./components/StockTab"
 import MessagingTab from "./components/MessagingTab"
 import GlobalStockTable from "@/components/stock/GlobalStockTable"
 import Navbar from "@/components/layout/Navbar"
+import BugReportModal from "@/components/BugReportModal"
 
 export default function LivreurPage() {
+  
   const [activeTab, setActiveTab] = useState("orders")
+
+  const [bugModal, setBugModal] = useState(false)
 
   return (
     

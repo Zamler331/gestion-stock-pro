@@ -4,6 +4,7 @@ import OfflineIndicator from "@/components/OfflineIndicator"
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SyncIndicator from "@/components/SyncIndicator"
+import BugReportProvider from "./providers/BugReportProvider"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,7 +43,9 @@ export default function RootLayout({ children }) {
       <PendingBadge />
       <SyncIndicator />
 
-      {children}
+      <BugReportProvider>
+        {children}
+      </BugReportProvider>
 
     </body>
   </html>

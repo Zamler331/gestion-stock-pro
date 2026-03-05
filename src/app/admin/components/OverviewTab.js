@@ -49,11 +49,12 @@ export default function OverviewTab() {
 
       const { data: stocks, error: stockError } = await supabase
         .from("stocks")
-        .select(`
-          quantity,
-          product_id,
-          products ( name )
-        `)
+.select(`
+  quantity,
+  products:product_id (
+    name
+  )
+`)
 
       if (stockError) {
         console.error("Erreur stocks:", stockError)
