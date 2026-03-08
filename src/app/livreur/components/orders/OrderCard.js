@@ -205,7 +205,7 @@ ${partialItems
     {/* HEADER */}
     <div className="space-y-1">
       <h3 className="font-semibold text-lg text-slate-900">
-        {order.destination?.name}
+        {order.locations?.name}
       </h3>
       <p className="text-sm text-slate-500">
         Envoyée le {new Date(order.created_at).toLocaleString("fr-FR")}

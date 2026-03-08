@@ -4,74 +4,45 @@ import { supabase } from "@/lib/supabase"
 /* 📦 Récupérer commandes en attente */
 /* ============================= */
 
-export async function getPendingOrders() {
+export async function getPendingOrders(locationId) {
 
-  // 1️⃣ Récupérer commandes pending
+  if (!locationId) {
+    console.warn("locationId manquant, skip fetchOrders")
+    return []
+  }
+
   const { data: orders, error: ordersError } = await supabase
-    .from("orders")
-    .select("*")
+  .from("orders")
+  .select(`
+    id,
+    created_at,
+    destination_location_id,
+    locations (
+      id,
+      name
+    ),
+    order_items (
+      id,
+      product_id,
+      quantity_ordered,
+      products (
+        id,
+        name,
+        packaging
+      )
+    )
+  `)
     .eq("status", "pending")
     .order("created_at", { ascending: false })
+
+  console.log("ORDERS FETCHED:", orders)
 
   if (ordersError) {
     console.error("Orders error:", ordersError)
     throw new Error(ordersError.message)
   }
 
-  if (!orders || orders.length === 0) return []
-
-  // 2️⃣ Récupérer order_items
-  const orderIds = orders.map(o => o.id)
-
-  const { data: items, error: itemsError } = await supabase
-    .from("order_items")
-    .select("*")
-    .in("order_id", orderIds)
-
-  if (itemsError) {
-    console.error("Items error:", itemsError)
-    throw new Error(itemsError.message)
-  }
-
-  // 3️⃣ Récupérer produits
-  const productIds = [...new Set(items.map(i => i.product_id))]
-
-  const { data: products, error: prodError } = await supabase
-    .from("products")
-    .select("*")
-    .in("id", productIds)
-
-  if (prodError) {
-    console.error("Products error:", prodError)
-    throw new Error(prodError.message)
-  }
-
-  // 4️⃣ Récupérer locations
-  const locationIds = [...new Set(orders.map(o => o.destination_location_id))]
-
-  const { data: locations, error: locError } = await supabase
-    .from("locations")
-    .select("*")
-    .in("id", locationIds)
-
-  if (locError) {
-    console.error("Locations error:", locError)
-    throw new Error(locError.message)
-  }
-
-  // 5️⃣ Recomposer manuellement
-  const result = orders.map(order => ({
-    ...order,
-    destination: locations.find(l => l.id === order.destination_location_id),
-    order_items: items
-      .filter(i => i.order_id === order.id)
-      .map(i => ({
-        ...i,
-        products: products.find(p => p.id === i.product_id)
-      }))
-  }))
-
-  return result
+  return orders || []
 }
 
 
@@ -99,6 +70,10 @@ export async function validateFullOrder(
 
     const deliveredQty = deliveryQuantities[item.id] || 0
 
+    /* ============================= */
+    /* Stock réserve */
+    /* ============================= */
+
     const { data: reserveStock, error: reserveError } = await supabase
       .from("stocks")
       .select("*")
@@ -107,11 +82,11 @@ export async function validateFullOrder(
       .single()
 
     if (reserveError || !reserveStock) {
-      throw new Error(`Stock réserve introuvable pour ${item.products.name}`)
+      throw new Error(`Stock réserve introuvable pour ${item.products?.name || "produit"}`)
     }
 
     if (reserveStock.quantity < deliveredQty) {
-      throw new Error(`Stock insuffisant pour ${item.products.name}`)
+      throw new Error(`Stock insuffisant pour ${item.products?.name || "produit"}`)
     }
 
     await supabase
@@ -121,12 +96,20 @@ export async function validateFullOrder(
       })
       .eq("id", reserveStock.id)
 
-    const { data: poleStock } = await supabase
+    /* ============================= */
+    /* Stock pôle */
+    /* ============================= */
+
+    const { data: poleStock, error: poleError } = await supabase
       .from("stocks")
       .select("*")
       .eq("product_id", item.product_id)
       .eq("location_id", order.destination_location_id)
       .single()
+
+    if (poleError || !poleStock) {
+      throw new Error(`Stock pôle introuvable pour ${item.products?.name || "produit"}`)
+    }
 
     await supabase
       .from("stocks")
@@ -134,6 +117,10 @@ export async function validateFullOrder(
         quantity: poleStock.quantity + deliveredQty
       })
       .eq("id", poleStock.id)
+
+    /* ============================= */
+    /* Mouvement de stock */
+    /* ============================= */
 
     await supabase.from("movements").insert({
       product_id: item.product_id,
@@ -144,6 +131,10 @@ export async function validateFullOrder(
       user_id: user.id,
       annotation: `Livraison commande ${order.id}`
     })
+
+    /* ============================= */
+    /* Mise à jour ligne commande */
+    /* ============================= */
 
     await supabase
       .from("order_items")
@@ -158,15 +149,25 @@ export async function validateFullOrder(
       })
       .eq("id", item.id)
 
+    /* ============================= */
+    /* Notification livraison partielle */
+    /* ============================= */
+
     if (deliveredQty < item.quantity_ordered) {
+
       await supabase.from("notifications").insert({
         location_id: order.destination_location_id,
         product_id: item.product_id,
-        message: `Livraison partielle : ${deliveredQty}/${item.quantity_ordered} pour ${item.products.name}`,
+        message: `Livraison partielle : ${deliveredQty}/${item.quantity_ordered} pour ${item.products?.name || "produit"}`,
         read: false
       })
+
     }
   }
+
+  /* ============================= */
+  /* Commande terminée */
+  /* ============================= */
 
   await supabase
     .from("orders")

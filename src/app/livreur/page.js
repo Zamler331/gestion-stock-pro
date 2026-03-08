@@ -1,53 +1,114 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabase"
+
 import TabsNavigation from "./components/TabsNavigation"
 import OrdersTransfersTab from "./components/OrdersTransfersTab"
 import EntriesTab from "./components/EntriesTab"
 import StockTab from "./components/StockTab"
 import MessagingTab from "./components/MessagingTab"
+
 import GlobalStockTable from "@/components/stock/GlobalStockTable"
 import Navbar from "@/components/layout/Navbar"
 import BugReportModal from "@/components/BugReportModal"
 
 export default function LivreurPage() {
-  
-  const [activeTab, setActiveTab] = useState("orders")
 
+  const [activeTab, setActiveTab] = useState("orders")
   const [bugModal, setBugModal] = useState(false)
 
-  return (
-    
-  <div className="min-h-screen bg-slate-200">
-<Navbar title="Espace Livreur" role="Livreur" />
-    <div className="max-w-7xl mx-auto px-8 py-10 space-y-10">
+  const [locationId, setLocationId] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-      {/* NAVIGATION */}
-      <TabsNavigation
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+  useEffect(() => {
+
+    async function fetchProfile() {
+
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("location_id")
+        .eq("id", user.id)
+        .single()
+
+      if (profile) {
+        setLocationId(profile.location_id)
+      }
+
+      setLoading(false)
+    }
+
+    fetchProfile()
+
+  }, [])
+
+  console.log("LIVREUR locationId:", locationId)
+
+  if (loading) {
+    return (
+      <div className="p-10 text-slate-600">
+        Chargement...
+      </div>
+    )
+  }
+
+  return (
+
+    <div className="min-h-screen bg-slate-200">
+
+      <Navbar
+        title="Espace Livreur"
+        role="Livreur"
       />
 
-      {/* CONTENU */}
-      <div className="space-y-8">
+      <BugReportModal
+        open={bugModal}
+        onClose={() => setBugModal(false)}
+        role="livreur"
+      />
 
-        {activeTab === "orders" && <OrdersTransfersTab />}
+      <div className="max-w-7xl mx-auto px-8 py-10 space-y-10">
 
-        {activeTab === "entries" && <EntriesTab />}
+        {/* NAVIGATION */}
+        <TabsNavigation
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+        />
 
-        {activeTab === "stock" && (
-          <>
-            <StockTab />
-            <GlobalStockTable />
-          </>
-        )}
+        {/* CONTENU */}
+        <div className="space-y-8">
 
-        {activeTab === "messages" && <MessagingTab />}
+          {activeTab === "orders" && (
+            <OrdersTransfersTab locationId={locationId} />
+          )}
+
+          {activeTab === "entries" && (
+            <EntriesTab />
+          )}
+
+          {activeTab === "stock" && (
+            <>
+              <StockTab />
+              <GlobalStockTable />
+            </>
+          )}
+
+          {activeTab === "messages" && (
+            <MessagingTab />
+          )}
+
+        </div>
 
       </div>
 
     </div>
 
-  </div>
-)
+  )
 }

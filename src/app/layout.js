@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SyncIndicator from "@/components/SyncIndicator"
 import BugReportProvider from "./providers/BugReportProvider"
+import SyncInitializer from "@/components/SyncInitializer"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export default function RootLayout({ children }) {
       <SyncIndicator />
 
       <BugReportProvider>
+        <SyncInitializer/>
         {children}
       </BugReportProvider>
 

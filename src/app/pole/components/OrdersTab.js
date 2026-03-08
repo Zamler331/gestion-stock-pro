@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
+import { addToQueue } from "@/lib/offline/offlineQueue"
 
 export default function OrdersTab() {
 
@@ -155,66 +156,89 @@ export default function OrdersTab() {
 
   async function handleBulkOrder() {
 
-    try {
+  try {
 
-      if (!myLocationId) {
-        setMessage("Erreur : localisation inconnue")
-        return
-      }
+    setIsSubmitting(true)
+    setMessage("")
 
-      setIsSubmitting(true)
-      setMessage("")
+    if (!myLocationId) {
+  setMessage("Erreur localisation")
+  return
+}
 
-      const itemsToOrder = Object.entries(orderDraft)
-        .filter(([_, qty]) => parseInt(qty) > 0)
-        .map(([productId, qty]) => ({
-          product_id: productId,
-          quantity_ordered: parseInt(qty)
-        }))
-
-      if (itemsToOrder.length === 0) {
-        setMessage("Aucun produit sélectionné")
-        return
-      }
-
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          destination_location_id: myLocationId
-        })
-        .select()
-        .single()
-
-      if (orderError) throw orderError
-
-      const itemsPayload = itemsToOrder.map(item => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        quantity_ordered: item.quantity_ordered
+    const itemsToOrder = Object.entries(orderDraft)
+      .filter(([_, qty]) => parseInt(qty) > 0)
+      .map(([productId, qty]) => ({
+        product_id: productId,
+        quantity_ordered: parseInt(qty)
       }))
 
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(itemsPayload)
-
-      if (itemsError) throw itemsError
-
-      setOrderDraft({})
-      setMessage("Commande envoyée avec succès")
-
-      await fetchStocks()
-
-    } catch (error) {
-
-      console.error(error)
-      setMessage("Erreur lors de l'envoi")
-
-    } finally {
-
-      setIsSubmitting(false)
-
+    if (itemsToOrder.length === 0) {
+      setMessage("Aucun produit sélectionné")
+      return
     }
+
+    const itemsPayload = itemsToOrder.map(item => ({
+      product_id: item.product_id,
+      quantity_ordered: item.quantity_ordered
+    }))
+
+    /* ========================= */
+    /* OFFLINE MODE */
+    /* ========================= */
+
+    if (!navigator.onLine) {
+
+      await addToQueue({
+  type: "order",
+  destination_location_id: myLocationId,
+  items: itemsPayload
+})
+
+      setMessage("Commande enregistrée (hors connexion)")
+      return
+    }
+
+    /* ========================= */
+    /* ONLINE MODE */
+    /* ========================= */
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert({
+        destination_location_id: myLocationId
+      })
+      .select()
+      .single()
+
+    if (orderError) throw orderError
+
+    const itemsWithOrder = itemsPayload.map(item => ({
+      ...item,
+      order_id: order.id
+    }))
+
+    const { error: itemsError } = await supabase
+      .from("order_items")
+      .insert(itemsWithOrder)
+
+    if (itemsError) throw itemsError
+
+    setOrderDraft({})
+    setMessage("Commande envoyée")
+
+  } catch (error) {
+
+    console.error(error)
+    setMessage("Erreur commande")
+
+  } finally {
+
+    setIsSubmitting(false)
+
   }
+
+}
 
   function FilterButton({ label, active, onClick, type }) {
 

@@ -15,7 +15,7 @@ export default function PolePage() {
   const [locationName, setLocationName] = useState("")
 
   useEffect(() => {
-    console.log("POLETABS locationId:", locationId)
+    
     checkAccess()
   }, [])
 

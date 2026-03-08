@@ -1,8 +1,28 @@
 import { supabase } from "@/lib/supabase"
+import { getDB } from "@/lib/offline/offlineDB"
 
 export async function getGlobalStockView() {
 
   try {
+
+    /* ========================= */
+    /* OFFLINE MODE */
+    /* ========================= */
+
+    if (!navigator.onLine) {
+
+      console.log("Mode hors connexion → lecture cache")
+
+      const db = await getDB()
+      const cachedProducts = await db.getAll("stocks")
+      const cachedLocations = await db.getAll("locations")
+
+      return {
+        products: cachedProducts || [],
+        locations: cachedLocations || []
+      }
+
+    }
 
     /* ========================= */
     /* LOCATIONS */
@@ -92,8 +112,30 @@ export async function getGlobalStockView() {
 
     })
 
+    const products = Object.values(productsMap)
+
+    /* ========================= */
+    /* SAVE CACHE */
+    /* ========================= */
+
+    const db = await getDB()
+
+    const tx1 = db.transaction("stocks", "readwrite")
+    products.forEach(p => tx1.store.put(p))
+    await tx1.done
+
+    const tx2 = db.transaction("locations", "readwrite")
+    locations.forEach(l => tx2.store.put(l))
+    await tx2.done
+
+    console.log("Cache offline mis à jour")
+
+    /* ========================= */
+    /* RETURN ONLINE DATA */
+    /* ========================= */
+
     return {
-      products: Object.values(productsMap),
+      products,
       locations
     }
 
