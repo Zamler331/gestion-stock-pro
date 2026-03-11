@@ -39,10 +39,6 @@ export default function Navbar({ title, role }) {
         {/* LEFT */}
         <div className="flex items-center gap-6">
 
-          <h1 className="text-lg font-semibold text-slate-900">
-            {title}
-          </h1>
-
           {role && (
             <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-medium">
               {role}
