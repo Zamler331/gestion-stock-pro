@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { useBugReport } from "@/app/providers/BugReportProvider"
+import Image from "next/image"
 
 export default function Navbar({ title, role }) {
 
@@ -18,6 +19,22 @@ export default function Navbar({ title, role }) {
     <div className="sticky top-0 z-50 bg-white border-b border-slate-200">
 
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+
+        <div className="flex items-center gap-3">
+
+  <Image
+    src="/logo/logo.png"
+    alt="Logo"
+    width={36}
+    height={36}
+    priority
+  />
+
+  <span className="font-semibold text-lg">
+    {title}
+  </span>
+
+</div>
 
         {/* LEFT */}
         <div className="flex items-center gap-6">

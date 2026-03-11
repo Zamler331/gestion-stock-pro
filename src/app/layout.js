@@ -19,7 +19,10 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Gestion Stock Pro",
-  description: "Application interne de gestion de stock"
+  description: "Application interne de gestion de stock",
+  icons: {
+    icon: "/logo/logo-small.png"
+  }
 }
 
 export const viewport = {
