@@ -152,7 +152,7 @@ export default function AdminProductsPage() {
 
 async function fetchVisibility() {
   const { data } = await supabase
-    .from("product_location_visibility")
+    .from("product_location_settings")
     .select("product_id, location_id")
 
   const map = {}
@@ -167,12 +167,12 @@ async function fetchVisibility() {
 
 async function toggleVisibility(productId, locationId, isChecked) {
   if (isChecked) {
-    await supabase.from("product_location_visibility").insert([
+    await supabase.from("product_location_settings").insert([
       { product_id: productId, location_id: locationId }
     ])
   } else {
     await supabase
-      .from("product_location_visibility")
+      .from("product_location_settings")
       .delete()
       .eq("product_id", productId)
       .eq("location_id", locationId)

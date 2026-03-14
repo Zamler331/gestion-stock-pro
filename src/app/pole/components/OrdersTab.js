@@ -44,6 +44,35 @@ export default function OrdersTab() {
 
   async function fetchStocks() {
 
+  try {
+
+    /* ========================= */
+    /* VISIBILITÉ PRODUITS */
+    /* ========================= */
+
+    const { data: visibility, error: visError } = await supabase
+      .from("product_location_settings")
+      .select("product_id")
+      .eq("location_id", myLocationId)
+
+    if (visError) {
+      console.error("Erreur visibilité :", visError)
+      setStocks([])
+      return
+    }
+
+    const visibleProductIds =
+      visibility?.map(v => v.product_id) || []
+
+    if (visibleProductIds.length === 0) {
+      setStocks([])
+      return
+    }
+
+    /* ========================= */
+    /* STOCKS DU PÔLE */
+    /* ========================= */
+
     const { data: stockData, error } = await supabase
       .from("stocks")
       .select(`
@@ -60,12 +89,17 @@ export default function OrdersTab() {
         )
       `)
       .eq("location_id", myLocationId)
+      .in("product_id", visibleProductIds)
 
     if (error) {
       console.error("Erreur stocks :", error)
       setStocks([])
       return
     }
+
+    /* ========================= */
+    /* SEUILS */
+    /* ========================= */
 
     const { data: thresholds } = await supabase
       .from("product_location_settings")
@@ -78,11 +112,16 @@ export default function OrdersTab() {
         return acc
       }, {}) || {}
 
+    /* ========================= */
+    /* MERGE DATA */
+    /* ========================= */
+
     const merged = stockData.map(stock => {
 
       const threshold = thresholdMap[stock.product_id] ?? 5
 
       const isOut = stock.quantity === 0
+
       const isLow =
         stock.quantity > 0 &&
         stock.quantity <= threshold
@@ -93,10 +132,20 @@ export default function OrdersTab() {
         isOut,
         isLow
       }
+
     })
 
     setStocks(merged)
+
+  } catch (err) {
+
+    console.error("Erreur fetchStocks :", err)
+    setStocks([])
+
   }
+
+}
+
 
   /* ========================= */
   /* FILTERING */

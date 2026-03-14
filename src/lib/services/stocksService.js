@@ -14,6 +14,7 @@ export async function getGlobalStockView() {
       console.log("Mode hors connexion → lecture cache")
 
       const db = await getDB()
+
       const cachedProducts = await db.getAll("stocks")
       const cachedLocations = await db.getAll("locations")
 
@@ -39,6 +40,22 @@ export async function getGlobalStockView() {
     }
 
     /* ========================= */
+    /* VISIBILITÉ PRODUITS */
+    /* ========================= */
+
+    const { data: visibility, error: visError } = await supabase
+      .from("product_location_settings")
+      .select("product_id")
+
+    if (visError) {
+      console.error("Erreur visibilité:", visError)
+      return { products: [], locations }
+    }
+
+    const visibleProductIds = visibility?.map(v => v.product_id) || []
+
+
+    /* ========================= */
     /* STOCKS */
     /* ========================= */
 
@@ -58,6 +75,7 @@ export async function getGlobalStockView() {
           )
         )
       `)
+      .in("product_id", visibleProductIds)
 
     if (stocksError) {
       console.error("Erreur stocks:", stocksError)
@@ -65,22 +83,14 @@ export async function getGlobalStockView() {
     }
 
     /* ========================= */
-    /* THRESHOLDS */
+    /* THRESHOLD MAP */
     /* ========================= */
-
-    const { data: thresholds, error: thresholdError } = await supabase
-      .from("product_location_settings")
-      .select("*")
-
-    if (thresholdError) {
-      console.error("Erreur thresholds:", thresholdError)
-    }
 
     const thresholdMap = {}
 
-    thresholds?.forEach(t => {
-      thresholdMap[`${t.product_id}-${t.location_id}`] =
-        t.low_stock_threshold
+    visibility?.forEach(v => {
+      thresholdMap[`${v.product_id}-${v.location_id}`] =
+        v.low_stock_threshold
     })
 
     /* ========================= */
@@ -91,12 +101,14 @@ export async function getGlobalStockView() {
 
     stocks?.forEach(stock => {
 
+      if (!stock.products) return
+
       if (!productsMap[stock.product_id]) {
 
         productsMap[stock.product_id] = {
           product_id: stock.product_id,
-          name: stock.products?.name,
-          packaging: stock.products?.packaging || null,
+          name: stock.products.name,
+          packaging: stock.products.packaging || null,
           category: stock.products?.categories?.name || "Sans catégorie",
           locations: {}
         }
@@ -107,7 +119,7 @@ export async function getGlobalStockView() {
 
       productsMap[stock.product_id].locations[stock.location_id] = {
         quantity: stock.quantity,
-        threshold: thresholdMap[key] ?? 5
+        threshold: thresholdMap[key] ?? null
       }
 
     })
@@ -115,17 +127,25 @@ export async function getGlobalStockView() {
     const products = Object.values(productsMap)
 
     /* ========================= */
-    /* SAVE CACHE */
+    /* SAVE CACHE OFFLINE */
     /* ========================= */
 
     const db = await getDB()
 
     const tx1 = db.transaction("stocks", "readwrite")
-    products.forEach(p => tx1.store.put(p))
+
+    products.forEach(product => {
+      tx1.store.put(product)
+    })
+
     await tx1.done
 
     const tx2 = db.transaction("locations", "readwrite")
-    locations.forEach(l => tx2.store.put(l))
+
+    locations.forEach(location => {
+      tx2.store.put(location)
+    })
+
     await tx2.done
 
     console.log("Cache offline mis à jour")

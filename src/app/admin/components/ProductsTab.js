@@ -44,7 +44,7 @@ export default function ProductsTab() {
       .order("name")
 
     const { data: visibilityData } = await supabase
-      .from("product_location_visibility")
+      .from("product_location_settings")
       .select("*")
 
     const visibilityMap = {}
@@ -132,14 +132,14 @@ export default function ProductsTab() {
 
     if (isVisible) {
       await supabase
-        .from("product_location_visibility")
+        .from("product_location_settings")
         .insert([{
           product_id: productId,
           location_id: locationId
         }])
     } else {
       await supabase
-        .from("product_location_visibility")
+        .from("product_location_settings")
         .delete()
         .eq("product_id", productId)
         .eq("location_id", locationId)

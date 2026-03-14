@@ -18,6 +18,10 @@ export default function StockTab({ locationId }) {
 
       setLoading(true)
 
+      /* ========================= */
+      /* RESERVES */
+      /* ========================= */
+
       const { data: reserves, error: reserveError } = await supabase
         .from("locations")
         .select("id")
@@ -25,11 +29,39 @@ export default function StockTab({ locationId }) {
 
       if (reserveError) {
         console.error("Erreur reserves :", reserveError)
+        setRows([])
         return
       }
 
       const reserveIds = reserves?.map(r => r.id) || []
       const reserveSet = new Set(reserveIds)
+
+      /* ========================= */
+      /* PRODUITS VISIBLES */
+      /* ========================= */
+
+      const { data: visibility, error: visError } = await supabase
+        .from("product_location_visibility")
+        .select("product_id")
+        .eq("location_id", locationId)
+
+      if (visError) {
+        console.error("Erreur visibilité :", visError)
+        setRows([])
+        return
+      }
+
+      const visibleProductIds =
+        visibility?.map(v => v.product_id) || []
+
+      if (visibleProductIds.length === 0) {
+        setRows([])
+        return
+      }
+
+      /* ========================= */
+      /* STOCKS */
+      /* ========================= */
 
       const { data, error } = await supabase
         .from("stocks")
@@ -43,6 +75,7 @@ export default function StockTab({ locationId }) {
           )
         `)
         .in("location_id", [locationId, ...reserveIds])
+        .in("product_id", visibleProductIds)
 
       if (error) {
         console.error("Erreur stocks :", error)
@@ -50,40 +83,51 @@ export default function StockTab({ locationId }) {
         return
       }
 
+      /* ========================= */
+      /* MERGE DATA */
+      /* ========================= */
+
       const merged = {}
 
       data.forEach(item => {
 
-        if (!merged[item.product_id]) {
-          merged[item.product_id] = {
-            name: item.products?.name,
-            packaging: item.products?.packaging,
-            poleStock: 0,
-            reserveStock: 0
-          }
-        }
+  if (!item.products) return
 
-        if (item.location_id === locationId) {
-          merged[item.product_id].poleStock = item.quantity
-        }
+  if (!merged[item.product_id]) {
+    merged[item.product_id] = {
+      name: item.products.name,
+      packaging: item.products.packaging,
+      poleStock: 0,
+      reserveStock: 0
+    }
+  }
 
-        if (reserveSet.has(item.location_id)) {
-          merged[item.product_id].reserveStock += item.quantity
-        }
+  /* Stock du pôle uniquement */
+  if (item.location_id === locationId) {
+    merged[item.product_id].poleStock = item.quantity
+  }
 
-      })
+  /* Stock des réserves uniquement */
+  if (reserveSet.has(item.location_id)) {
+    merged[item.product_id].reserveStock += item.quantity
+  }
+
+})
+
 
       setRows(Object.values(merged))
 
     } catch (err) {
 
       console.error("Erreur fetchStocks :", err)
+      setRows([])
 
     } finally {
 
       setLoading(false)
 
     }
+
   }
 
   return (

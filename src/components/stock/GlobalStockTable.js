@@ -17,7 +17,7 @@ export default function GlobalStockTable({ highlightLocationId = null }) {
   async function fetchData() {
   try {
 
-    const data = await getGlobalStockView()
+    const data = await getGlobalStockView(highlightLocationId)
 
     setProducts(data?.products || [])
     setLocations(data?.locations || [])
@@ -47,10 +47,29 @@ const reserveLocations = useMemo(
   /* ========================= */
 
   const filtered = useMemo(() => {
-    return products.filter(p =>
-      p.name.toLowerCase().includes(search.toLowerCase())
+
+  let visibleProducts = products
+
+  /* ========================= */
+  /* FILTRE VISIBILITÉ PÔLE */
+  /* ========================= */
+
+  if (highlightLocationId) {
+    visibleProducts = products.filter(p =>
+      p.locations?.[highlightLocationId] !== undefined
     )
-  }, [products, search])
+  }
+
+  /* ========================= */
+  /* FILTRE RECHERCHE */
+  /* ========================= */
+
+  return visibleProducts.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  )
+
+}, [products, search, highlightLocationId])
+
 
   /* ========================= */
   /* GROUP BY CATEGORY */
@@ -103,6 +122,12 @@ const reserveLocations = useMemo(
 
         const currentPole = poleLocations.find(l => l.id === highlightLocationId)
         const otherPoles = poleLocations.filter(l => l.id !== highlightLocationId)
+  .filter(l =>
+    items.some(product =>
+      product.locations?.[l.id] !== undefined
+    )
+  )
+
 
         const isOpen = openCategories[category] ?? true
 

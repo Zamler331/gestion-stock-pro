@@ -31,11 +31,12 @@ export default function CommonStocksTab({ locationId }) {
 
     // 2️⃣ Produits visibles pour ce pôle
     const { data: visibility } = await supabase
-      .from("product_location_visibility")
-      .select("product_id")
-      .eq("location_id", locationId)
+  .from("product_location_settings")
+  .select("product_id")
+  .eq("location_id", locationId)
 
-    const productIds = visibility?.map(v => v.product_id) || []
+const productIds = visibility?.map(v => v.product_id) || []
+
 
     if (productIds.length === 0) {
       setCommonStocks([])
