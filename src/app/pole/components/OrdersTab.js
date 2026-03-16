@@ -372,71 +372,132 @@ export default function OrdersTab() {
             {category}
           </h3>
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="space-y-4">
 
-            <table className="min-w-full text-sm">
+  {/* TABLE DESKTOP */}
+  <div className="hidden md:block bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
 
-              <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-                <tr>
-                  <th className="px-6 py-4 text-left">Produit</th>
-                  <th className="px-6 py-4 text-center">Stock</th>
-                  <th className="px-6 py-4 text-center">Seuil</th>
-                  <th className="px-6 py-4 text-center">Commander</th>
-                </tr>
-              </thead>
+    <table className="min-w-full text-sm">
 
-              <tbody className="divide-y divide-slate-100">
+      <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+        <tr>
+          <th className="px-6 py-4 text-left">Produit</th>
+          <th className="px-6 py-4 text-center">Stock</th>
+          <th className="px-6 py-4 text-center">Seuil</th>
+          <th className="px-6 py-4 text-center">Commander</th>
+        </tr>
+      </thead>
 
-                {items.map((item, index) => (
+      <tbody className="divide-y divide-slate-100">
 
-                  <tr
-                    key={item.product_id}
-                    className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
-                  >
+        {items.map((item, index) => (
 
-                    <td className="px-6 py-4 font-medium text-slate-900">
+          <tr
+            key={item.product_id}
+            className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
+          >
 
-                      {item.products.name}
+            <td className="px-6 py-4 font-medium text-slate-900">
 
-                      {item.products.packaging && (
-                        <div className="text-xs text-slate-400 mt-1">
-                          {item.products.packaging}
-                        </div>
-                      )}
+              {item.products.name}
 
-                    </td>
+              {item.products.packaging && (
+                <div className="text-xs text-slate-400 mt-1">
+                  {item.products.packaging}
+                </div>
+              )}
 
-                    <td className="px-6 py-4 text-center font-semibold">
-                      {item.quantity}
-                    </td>
+            </td>
 
-                    <td className="px-6 py-4 text-center text-slate-400">
-                      {item.low_stock_threshold}
-                    </td>
+            <td className="px-6 py-4 text-center font-semibold">
+              {item.quantity}
+            </td>
 
-                    <td className="px-6 py-4 text-center">
+            <td className="px-6 py-4 text-center text-slate-400">
+              {item.low_stock_threshold}
+            </td>
 
-                      <input
-                        type="number"
-                        min="0"
-                        value={orderDraft[item.product_id] || ""}
-                        onChange={(e) =>
-                          updateOrder(item.product_id, e.target.value)
-                        }
-                        className="w-20 border border-slate-300 rounded-lg p-2 text-center text-sm"
-                      />
+            <td className="px-6 py-4 text-center">
 
-                    </td>
+              <input
+                type="number"
+                min="0"
+                value={orderDraft[item.product_id] || ""}
+                onChange={(e) =>
+                  updateOrder(item.product_id, e.target.value)
+                }
+                className="w-20 border border-slate-300 rounded-lg p-2 text-center text-sm"
+              />
 
-                  </tr>
+            </td>
 
-                ))}
+          </tr>
 
-              </tbody>
+        ))}
 
-            </table>
+      </tbody>
 
-          </div>
+    </table>
+
+  </div>
+
+  {/* CARTES MOBILE */}
+  <div className="md:hidden space-y-4">
+
+    {items.map(item => (
+
+      <div
+        key={item.product_id}
+        className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3"
+      >
+
+        <div className="font-semibold text-slate-900">
+          {item.products.name}
+
+          {item.products.packaging && (
+            <div className="text-xs text-slate-400">
+              {item.products.packaging}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Stock</span>
+          <span className="font-semibold">{item.quantity}</span>
+        </div>
+
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Seuil</span>
+          <span className="text-slate-500">
+            {item.low_stock_threshold}
+          </span>
+        </div>
+
+        <div className="flex justify-between items-center pt-2">
+
+          <span className="text-sm text-slate-600">
+            Commander
+          </span>
+
+          <input
+            type="number"
+            min="0"
+            value={orderDraft[item.product_id] || ""}
+            onChange={(e) =>
+              updateOrder(item.product_id, e.target.value)
+            }
+            className="w-24 border border-slate-300 rounded-lg p-2 text-center text-sm"
+          />
+
+        </div>
+
+      </div>
+
+    ))}
+
+  </div>
+
+</div>
 
         </div>
 

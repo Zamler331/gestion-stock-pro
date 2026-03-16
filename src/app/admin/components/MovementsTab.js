@@ -254,12 +254,16 @@ const allLocations = Array.from(
                 </td>
 
                 <td className={`px-4 py-3 text-center font-semibold ${
-                  m.quantity > 0
-                    ? "text-green-600"
-                    : "text-red-600"
-                }`}>
-                  {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
-                </td>
+  m.type === "sortie"
+    ? "text-red-600"
+    : "text-green-600"
+}`}>
+
+  {m.type === "sortie"
+    ? `-${m.quantity}`
+    : `+${m.quantity}`}
+
+</td>
 
                 <td className="px-4 py-3 text-center">
                   {m.source?.name || "-"}
