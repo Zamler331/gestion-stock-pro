@@ -1,6 +1,7 @@
 export default function TabsNavigation({ activeTab, setActiveTab }) {
   const tabs = [
     { id: "orders", label: "Commandes / Transferts" },
+    { id: "delivery", label: "Paninis" },
     { id: "entries", label: "Entrées" },
     { id: "stock", label: "Stock" },
     { id: "messages", label: "Messagerie" },

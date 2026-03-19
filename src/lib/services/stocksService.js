@@ -11,8 +11,6 @@ export async function getGlobalStockView() {
 
     if (!navigator.onLine) {
 
-      console.log("Mode hors connexion → lecture cache")
-
       const db = await getDB()
 
       const cachedProducts = await db.getAll("stocks")
@@ -29,130 +27,188 @@ export async function getGlobalStockView() {
     /* LOCATIONS */
     /* ========================= */
 
-    const { data: locations, error: locationsError } = await supabase
+    const { data: locations } = await supabase
       .from("locations")
       .select("*")
       .order("name")
 
-    if (locationsError) {
-      console.error("Erreur locations:", locationsError)
-      return { products: [], locations: [] }
-    }
-
     /* ========================= */
-    /* VISIBILITÉ PRODUITS */
+    /* VISIBILITÉ */
     /* ========================= */
 
-    const { data: visibility, error: visError } = await supabase
+    const { data: visibility } = await supabase
       .from("product_location_settings")
-      .select("product_id")
+      .select("product_id, location_id, low_stock_threshold")
 
-    if (visError) {
-      console.error("Erreur visibilité:", visError)
-      return { products: [], locations }
-    }
-
-    const visibleProductIds = visibility?.map(v => v.product_id) || []
-
-
-    /* ========================= */
-    /* STOCKS */
-    /* ========================= */
-
-    const { data: stocks, error: stocksError } = await supabase
-      .from("stocks")
-      .select(`
-        quantity,
-        location_id,
-        product_id,
-        products:product_id (
-          id,
-          name,
-          packaging,
-          category_id,
-          categories (
-            name
-          )
-        )
-      `)
-      .in("product_id", visibleProductIds)
-
-    if (stocksError) {
-      console.error("Erreur stocks:", stocksError)
-      return { products: [], locations }
-    }
-
-    /* ========================= */
-    /* THRESHOLD MAP */
-    /* ========================= */
-
+    const visibleMap = {}
     const thresholdMap = {}
 
     visibility?.forEach(v => {
+
+      if (!visibleMap[v.product_id]) {
+        visibleMap[v.product_id] = []
+      }
+
+      visibleMap[v.product_id].push(v.location_id)
+
       thresholdMap[`${v.product_id}-${v.location_id}`] =
         v.low_stock_threshold
     })
 
+    const visibleProductIds = Object.keys(visibleMap)
+
     /* ========================= */
-    /* PIVOT PRODUCTS */
+    /* PRODUITS (SOURCE DE VÉRITÉ) */
+    /* ========================= */
+
+    const { data: productsData } = await supabase
+      .from("products")
+      .select(`
+        id,
+        name,
+        packaging,
+        categories ( name )
+      `)
+      .in("id", visibleProductIds)
+
+    const productInfoMap = {}
+
+    productsData?.forEach(p => {
+      productInfoMap[p.id] = p
+    })
+
+    /* ========================= */
+    /* BATCHES */
+    /* ========================= */
+
+    const { data: batches, error } = await supabase
+      .from("stock_batches")
+      .select(`
+        quantity,
+        location_id,
+        product_id,
+        expiration_date,
+        source_movement_id
+      `)
+      .in("product_id", visibleProductIds)
+
+    if (error) {
+      console.error("Erreur batches:", error)
+      return { products: [], locations }
+    }
+
+    /* ========================= */
+    /* MOVEMENTS */
+    /* ========================= */
+
+    const { data: movements } = await supabase
+      .from("movements")
+      .select("id, effective_date")
+
+    const movementMap = {}
+
+    movements?.forEach(m => {
+      movementMap[m.id] = m.effective_date
+    })
+
+    /* ========================= */
+    /* FILTRAGE */
+    /* ========================= */
+
+    const now = new Date()
+
+    const validBatches = (batches || []).filter(b => {
+
+      const notExpired =
+        !b.expiration_date ||
+        new Date(b.expiration_date) > now
+
+      const effectiveDate = movementMap[b.source_movement_id]
+
+      const isActive =
+        !effectiveDate ||
+        new Date(effectiveDate) <= now
+
+      return notExpired && isActive
+    })
+
+    /* ========================= */
+    /* INIT PRODUITS (IMPORTANT) */
     /* ========================= */
 
     const productsMap = {}
 
-    stocks?.forEach(stock => {
+    visibleProductIds.forEach(productId => {
 
-      if (!stock.products) return
+      const info = productInfoMap[productId]
 
-      if (!productsMap[stock.product_id]) {
+      productsMap[productId] = {
+        product_id: productId,
+        name: info?.name || "Produit",
+        packaging: info?.packaging || null,
+        category: info?.categories?.name || "Sans catégorie",
+        locations: {}
+      }
 
-        productsMap[stock.product_id] = {
-          product_id: stock.product_id,
-          name: stock.products.name,
-          packaging: stock.products.packaging || null,
-          category: stock.products?.categories?.name || "Sans catégorie",
-          locations: {}
+    })
+
+    /* ========================= */
+    /* AGRÉGATION BATCHES */
+    /* ========================= */
+
+    validBatches.forEach(batch => {
+
+      const product = productsMap[batch.product_id]
+
+      if (!product) return
+
+      if (!product.locations[batch.location_id]) {
+        product.locations[batch.location_id] = {
+          quantity: 0,
+          threshold:
+            thresholdMap[`${batch.product_id}-${batch.location_id}`] ?? 5
+        }
+      }
+
+      product.locations[batch.location_id].quantity += batch.quantity
+
+    })
+
+    /* ========================= */
+    /* AJOUT DES ZÉROS */
+    /* ========================= */
+
+    locations.forEach(loc => {
+
+      Object.values(productsMap).forEach(product => {
+
+        if (!product.locations[loc.id]) {
+          product.locations[loc.id] = {
+            quantity: 0,
+            threshold:
+              thresholdMap[`${product.product_id}-${loc.id}`] ?? 5
+          }
         }
 
-      }
-
-      const key = `${stock.product_id}-${stock.location_id}`
-
-      productsMap[stock.product_id].locations[stock.location_id] = {
-        quantity: stock.quantity,
-        threshold: thresholdMap[key] ?? null
-      }
+      })
 
     })
 
     const products = Object.values(productsMap)
 
     /* ========================= */
-    /* SAVE CACHE OFFLINE */
+    /* CACHE OFFLINE */
     /* ========================= */
 
     const db = await getDB()
 
     const tx1 = db.transaction("stocks", "readwrite")
-
-    products.forEach(product => {
-      tx1.store.put(product)
-    })
-
+    products.forEach(p => tx1.store.put(p))
     await tx1.done
 
     const tx2 = db.transaction("locations", "readwrite")
-
-    locations.forEach(location => {
-      tx2.store.put(location)
-    })
-
+    locations.forEach(l => tx2.store.put(l))
     await tx2.done
-
-    console.log("Cache offline mis à jour")
-
-    /* ========================= */
-    /* RETURN ONLINE DATA */
-    /* ========================= */
 
     return {
       products,
@@ -169,5 +225,4 @@ export async function getGlobalStockView() {
     }
 
   }
-
 }

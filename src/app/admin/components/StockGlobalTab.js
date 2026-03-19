@@ -38,10 +38,60 @@ export default function StockGlobalTab() {
         )
       `)
 
-    // 3️⃣ Stocks
-    const { data: stocksData } = await supabase
-      .from("stocks")
-      .select("*")
+    /* ========================= */
+/* STOCK BATCHES */
+/* ========================= */
+
+const { data: batchesData, error: batchesError } = await supabase
+  .from("stock_batches")
+  .select(`
+    quantity,
+    location_id,
+    product_id,
+    expiration_date,
+    source_movement_id
+  `)
+
+if (batchesError) {
+  console.error("Erreur batches:", batchesError)
+  return
+}
+
+/* ========================= */
+/* FILTRAGE */
+/* ========================= */
+
+const now = new Date()
+
+const validBatches = batchesData.filter(b => {
+
+  const notExpired =
+    !b.expiration_date ||
+    new Date(b.expiration_date) > now
+
+  const isActive =
+    !b.movements?.effective_date ||
+    new Date(b.movements.effective_date) <= now
+
+  return notExpired && isActive
+})
+
+/* ========================= */
+/* AGRÉGATION */
+/* ========================= */
+
+const stockMap = {}
+
+validBatches.forEach(batch => {
+
+  const key = `${batch.product_id}-${batch.location_id}`
+
+  if (!stockMap[key]) {
+    stockMap[key] = 0
+  }
+
+  stockMap[key] += batch.quantity
+})
 
     // 4️⃣ Seuils
     const { data: thresholdsData } = await supabase
@@ -80,13 +130,8 @@ export default function StockGlobalTab() {
       }
 
       locationData?.forEach(loc => {
-        const stock = stocksData?.find(
-          s =>
-            s.product_id === product.id &&
-            s.location_id === loc.id
-        )
-
-        const qty = stock?.quantity || 0
+        const key = `${product.id}-${loc.id}`
+        const qty = stockMap[key] || 0
 
         row.quantities[loc.id] = qty
         row.total += qty

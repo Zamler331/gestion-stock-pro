@@ -8,6 +8,7 @@ export default function OrdersTab() {
 
   const [stocks, setStocks] = useState([])
   const [orderDraft, setOrderDraft] = useState({})
+  const [stockDraft, setStockDraft] = useState({})
   const [search, setSearch] = useState("")
   const [alertFilter, setAlertFilter] = useState("all")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -19,7 +20,6 @@ export default function OrdersTab() {
   }, [])
 
   async function fetchMyLocation() {
-
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
@@ -29,14 +29,8 @@ export default function OrdersTab() {
       .eq("id", user.id)
       .single()
 
-    if (data) {
-      setMyLocationId(data.location_id)
-    }
+    if (data) setMyLocationId(data.location_id)
   }
-
-  /* ========================= */
-  /* FETCH STOCK */
-  /* ========================= */
 
   useEffect(() => {
     if (myLocationId) fetchStocks()
@@ -44,478 +38,423 @@ export default function OrdersTab() {
 
   async function fetchStocks() {
 
-  try {
+    const now = new Date()
 
-    /* ========================= */
-    /* VISIBILITÉ PRODUITS */
-    /* ========================= */
-
-    const { data: visibility, error: visError } = await supabase
+    /* VISIBILITÉ */
+    const { data: visibility } = await supabase
       .from("product_location_settings")
       .select("product_id")
       .eq("location_id", myLocationId)
 
-    if (visError) {
-      console.error("Erreur visibilité :", visError)
+    const productIds = visibility?.map(v => v.product_id) || []
+
+    if (productIds.length === 0) {
       setStocks([])
       return
     }
 
-    const visibleProductIds =
-      visibility?.map(v => v.product_id) || []
+    /* PRODUITS */
+    const { data: productsData } = await supabase
+      .from("products")
+      .select(`id, name, packaging, categories(name)`)
+      .in("id", productIds)
 
-    if (visibleProductIds.length === 0) {
-      setStocks([])
-      return
-    }
+    const productMap = {}
+    productsData?.forEach(p => {
+      productMap[p.id] = p
+    })
 
-    /* ========================= */
-    /* STOCKS DU PÔLE */
-    /* ========================= */
-
-    const { data: stockData, error } = await supabase
-      .from("stocks")
-      .select(`
-        id,
-        quantity,
-        product_id,
-        products:product_id (
-          id,
-          name,
-          packaging,
-          categories (
-            name
-          )
-        )
-      `)
+    /* BATCHES */
+    const { data: batches } = await supabase
+      .from("stock_batches")
+      .select("*")
       .eq("location_id", myLocationId)
-      .in("product_id", visibleProductIds)
+      .in("product_id", productIds)
 
-    if (error) {
-      console.error("Erreur stocks :", error)
-      setStocks([])
-      return
-    }
+    /* MOVEMENTS (effective_date) */
+    const { data: movements } = await supabase
+      .from("movements")
+      .select("id, effective_date")
 
-    /* ========================= */
-    /* SEUILS */
-    /* ========================= */
+    const movementMap = {}
+    movements?.forEach(m => {
+      movementMap[m.id] = m.effective_date
+    })
 
+    /* FILTRAGE */
+    const validBatches = (batches || []).filter(b => {
+
+      const notExpired =
+        !b.expiration_date ||
+        new Date(b.expiration_date) > now
+
+      const effectiveDate = movementMap[b.source_movement_id]
+
+      const isActive =
+        !effectiveDate ||
+        new Date(effectiveDate) <= now
+
+      return notExpired && isActive
+    })
+
+    /* AGRÉGATION */
+    const formatted = productIds.map(productId => {
+
+      const batchesForProduct =
+        validBatches.filter(b => b.product_id === productId)
+
+      const totalQty = batchesForProduct.reduce(
+        (sum, b) => sum + b.quantity,
+        0
+      )
+
+      const productInfo = productMap[productId]
+
+      return {
+        product_id: productId,
+        quantity: totalQty,
+        products: productInfo,
+      }
+    })
+
+    /* THRESHOLDS */
     const { data: thresholds } = await supabase
       .from("product_location_settings")
       .select("product_id, low_stock_threshold")
       .eq("location_id", myLocationId)
 
-    const thresholdMap =
-      thresholds?.reduce((acc, t) => {
-        acc[t.product_id] = t.low_stock_threshold
-        return acc
-      }, {}) || {}
-
-    /* ========================= */
-    /* MERGE DATA */
-    /* ========================= */
-
-    const merged = stockData.map(stock => {
-
-      const threshold = thresholdMap[stock.product_id] ?? 5
-
-      const isOut = stock.quantity === 0
-
-      const isLow =
-        stock.quantity > 0 &&
-        stock.quantity <= threshold
-
-      return {
-        ...stock,
-        low_stock_threshold: threshold,
-        isOut,
-        isLow
-      }
-
+    const thresholdMap = {}
+    thresholds?.forEach(t => {
+      thresholdMap[t.product_id] = t.low_stock_threshold
     })
 
-    setStocks(merged)
+    const finalData = formatted.map(p => {
 
-  } catch (err) {
+      const threshold = thresholdMap[p.product_id] ?? 5
 
-    console.error("Erreur fetchStocks :", err)
-    setStocks([])
+      return {
+        ...p,
+        low_stock_threshold: threshold,
+        isLow: p.quantity > 0 && p.quantity <= threshold,
+        isOut: p.quantity === 0
+      }
+    })
 
+    setStocks(finalData)
+
+    const draft = {}
+    finalData.forEach(p => {
+      draft[p.product_id] = p.quantity
+    })
+
+    setStockDraft(draft)
   }
 
-}
-
-
-  /* ========================= */
-  /* FILTERING */
-  /* ========================= */
-
-  const filteredStocks = useMemo(() => {
-
-    return stocks
-      .filter(item =>
-        item.products.name
-          .toLowerCase()
-          .includes(search.toLowerCase())
-      )
-      .filter(item => {
-        if (alertFilter === "low") return item.isLow
-        if (alertFilter === "out") return item.isOut
-        return true
-      })
-
-  }, [stocks, search, alertFilter])
-
-  const lowStockCount = stocks.filter(s => s.isLow).length
-  const outOfStockCount = stocks.filter(s => s.isOut).length
-
-  /* ========================= */
-  /* GROUP BY CATEGORY */
-  /* ========================= */
-
-  const groupedStocks = useMemo(() => {
-
-    return filteredStocks.reduce((acc, item) => {
-
-      const category =
-        item.products.categories?.name ||
-        "Sans catégorie"
-
-      if (!acc[category]) acc[category] = []
-      acc[category].push(item)
-
-      return acc
-
-    }, {})
-
-  }, [filteredStocks])
-
-  /* ========================= */
-  /* ORDER HANDLING */
-  /* ========================= */
+  function updateStock(productId, value) {
+    setStockDraft(prev => ({
+      ...prev,
+      [productId]: parseInt(value) || 0
+    }))
+  }
 
   function updateOrder(productId, value) {
-
     setOrderDraft(prev => ({
       ...prev,
       [productId]: parseInt(value) || 0
     }))
   }
 
-  async function handleBulkOrder() {
-
-  try {
-
-    setIsSubmitting(true)
-    setMessage("")
-
-    if (!myLocationId) {
-  setMessage("Erreur localisation")
-  return
-}
-
-    const itemsToOrder = Object.entries(orderDraft)
-      .filter(([_, qty]) => parseInt(qty) > 0)
-      .map(([productId, qty]) => ({
-        product_id: productId,
-        quantity_ordered: parseInt(qty)
-      }))
-
-    if (itemsToOrder.length === 0) {
-      setMessage("Aucun produit sélectionné")
-      return
-    }
-
-    const itemsPayload = itemsToOrder.map(item => ({
-      product_id: item.product_id,
-      quantity_ordered: item.quantity_ordered
-    }))
-
-    /* ========================= */
-    /* OFFLINE MODE */
-    /* ========================= */
-
-    if (!navigator.onLine) {
-
-      await addToQueue({
-  type: "order",
-  destination_location_id: myLocationId,
-  items: itemsPayload
-})
-
-      setMessage("Commande enregistrée (hors connexion)")
-      return
-    }
-
-    /* ========================= */
-    /* ONLINE MODE */
-    /* ========================= */
-
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        destination_location_id: myLocationId
+  const filtered = useMemo(() => {
+    return stocks
+      .filter(item =>
+        item.products?.name?.toLowerCase().includes(search.toLowerCase())
+      )
+      .filter(item => {
+        if (alertFilter === "low") return item.isLow
+        if (alertFilter === "out") return item.isOut
+        return true
       })
-      .select()
-      .single()
+  }, [stocks, search, alertFilter])
 
-    if (orderError) throw orderError
+  const grouped = useMemo(() => {
+    return filtered.reduce((acc, item) => {
+      const cat = item.products?.categories?.name || "Sans catégorie"
+      if (!acc[cat]) acc[cat] = []
+      acc[cat].push(item)
+      return acc
+    }, {})
+  }, [filtered])
 
-    const itemsWithOrder = itemsPayload.map(item => ({
-      ...item,
-      order_id: order.id
-    }))
+  async function handleValidate() {
 
-    const { error: itemsError } = await supabase
-      .from("order_items")
-      .insert(itemsWithOrder)
+    try {
 
-    if (itemsError) throw itemsError
+      setIsSubmitting(true)
+      setMessage("")
 
-    setOrderDraft({})
-    setMessage("Commande envoyée")
+      const { data: { user } } = await supabase.auth.getUser()
 
-  } catch (error) {
+      for (const stock of stocks) {
 
-    console.error(error)
-    setMessage("Erreur commande")
+        const newQty = stockDraft[stock.product_id]
+        const oldQty = stock.quantity
 
-  } finally {
+        if (newQty === oldQty) continue
 
-    setIsSubmitting(false)
+        const diff = newQty - oldQty
 
-  }
+        /* CREATE MOVEMENT */
+        const { data: movement } = await supabase
+          .from("movements")
+          .insert({
+            product_id: stock.product_id,
+            quantity: Math.abs(diff),
+            type: diff < 0 ? "sortie" : "correction",
+            source_location_id: myLocationId,
+            user_id: user.id
+          })
+          .select()
+          .single()
 
-}
+        /* ========================= */
+        /* FIFO SORTIE 🔥 */
+        /* ========================= */
 
-  function FilterButton({ label, active, onClick, type }) {
+        if (diff < 0) {
 
-  const base =
-    "px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          const qtyToRemove = Math.abs(diff)
 
-  const styles = {
-    default: active
-      ? "bg-slate-900 text-white"
-      : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-100",
+          const { data: batches } = await supabase
+            .from("stock_batches")
+            .select("*")
+            .eq("product_id", stock.product_id)
+            .eq("location_id", myLocationId)
+            .order("created_at", { ascending: true })
 
-    warning: active
-      ? "bg-orange-600 text-white"
-      : "bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100",
+          let remaining = qtyToRemove
 
-    danger: active
-      ? "bg-red-600 text-white"
-      : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+          const now = new Date()
+
+          const validBatches = (batches || []).filter(b =>
+            !b.expiration_date ||
+            new Date(b.expiration_date) > now
+          )
+
+          const totalAvailable = validBatches.reduce(
+            (sum, b) => sum + b.quantity,
+            0
+          )
+
+          if (totalAvailable < qtyToRemove) {
+            console.error("Stock insuffisant FIFO")
+            continue
+          }
+
+          for (const batch of validBatches) {
+
+            if (remaining <= 0) break
+
+            if (batch.quantity <= remaining) {
+
+              await supabase
+                .from("stock_batches")
+                .delete()
+                .eq("id", batch.id)
+
+              remaining -= batch.quantity
+
+            } else {
+
+              await supabase
+                .from("stock_batches")
+                .update({
+                  quantity: batch.quantity - remaining
+                })
+                .eq("id", batch.id)
+
+              remaining = 0
+            }
+          }
+        }
+
+        /* ========================= */
+        /* ENTRÉE → BATCH */
+        /* ========================= */
+
+        if (diff > 0) {
+
+          await supabase
+            .from("stock_batches")
+            .insert({
+              product_id: stock.product_id,
+              location_id: myLocationId,
+              quantity: diff,
+              source_movement_id: movement.id
+            })
+        }
+      }
+
+      /* COMMANDES */
+
+      const items = Object.entries(orderDraft)
+        .filter(([_, q]) => q > 0)
+        .map(([productId, q]) => ({
+          product_id: productId,
+          quantity_ordered: q
+        }))
+
+      if (items.length > 0) {
+
+        if (!navigator.onLine) {
+
+          await addToQueue({
+            type: "order",
+            destination_location_id: myLocationId,
+            items
+          })
+
+        } else {
+
+          const { data: order } = await supabase
+            .from("orders")
+            .insert({
+              destination_location_id: myLocationId
+            })
+            .select()
+            .single()
+
+          const itemsWithOrder = items.map(i => ({
+            ...i,
+            order_id: order.id
+          }))
+
+          await supabase
+            .from("order_items")
+            .insert(itemsWithOrder)
+        }
+      }
+
+      setMessage("Mise à jour + commande OK ✅")
+      fetchStocks()
+      setOrderDraft({})
+
+    } catch (err) {
+
+      console.error(err)
+      setMessage("Erreur")
+
+    } finally {
+
+      setIsSubmitting(false)
+    }
   }
 
   return (
-    <button
-      onClick={onClick}
-      className={`${base} ${styles[type || "default"]}`}
-    >
-      {label}
-    </button>
-  )
-}
+    <div className="space-y-8">
 
-  /* ========================= */
-  /* UI */
-  /* ========================= */
-
-  return (
-    <div className="space-y-10">
-
-      <h2 className="text-2xl font-semibold text-slate-900">
-        Commander des produits
+      <h2 className="text-xl font-semibold">
+        Stock & Commande
       </h2>
-
-      <div className="flex gap-3 flex-wrap">
-
-        <FilterButton
-          label="Tous"
-          active={alertFilter === "all"}
-          onClick={() => setAlertFilter("all")}
-        />
-
-        {lowStockCount > 0 && (
-          <FilterButton
-            label={`${lowStockCount} sous seuil`}
-            active={alertFilter === "low"}
-            onClick={() => setAlertFilter("low")}
-            type="warning"
-          />
-        )}
-
-        {outOfStockCount > 0 && (
-          <FilterButton
-            label={`${outOfStockCount} rupture`}
-            active={alertFilter === "out"}
-            onClick={() => setAlertFilter("out")}
-            type="danger"
-          />
-        )}
-
-      </div>
 
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Rechercher un produit..."
-        className="border border-slate-300 px-4 py-2 rounded-lg w-80 text-sm"
+        placeholder="Rechercher..."
+        className="border px-4 py-2 rounded-lg w-full"
       />
 
-      {Object.entries(groupedStocks || {}).map(([category, items]) => (
+      {Object.entries(grouped).map(([cat, items]) => (
 
-        <div key={category} className="space-y-4">
+        <div key={cat} className="space-y-3">
 
-          <h3 className="font-semibold text-lg text-slate-800">
-            {category}
-          </h3>
+          <h3 className="font-semibold">{cat}</h3>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
 
-  {/* TABLE DESKTOP */}
-  <div className="hidden md:block bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            {items.map(item => {
 
-    <table className="min-w-full text-sm">
+              const currentStock = stockDraft[item.product_id] ?? 0
 
-      <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-        <tr>
-          <th className="px-6 py-4 text-left">Produit</th>
-          <th className="px-6 py-4 text-center">Stock</th>
-          <th className="px-6 py-4 text-center">Seuil</th>
-          <th className="px-6 py-4 text-center">Commander</th>
-        </tr>
-      </thead>
+              const isOut = currentStock === 0
+              const isLow =
+                currentStock > 0 &&
+                currentStock <= item.low_stock_threshold
 
-      <tbody className="divide-y divide-slate-100">
+              const suggestedOrder = Math.max(
+                item.low_stock_threshold - currentStock,
+                0
+              )
 
-        {items.map((item, index) => (
+              return (
+                <div key={item.product_id} className="bg-white p-4 rounded-xl shadow space-y-2">
 
-          <tr
-            key={item.product_id}
-            className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
-          >
+                  <div className="font-medium flex items-center gap-2">
+                    {item.products?.name || "Produit"}
 
-            <td className="px-6 py-4 font-medium text-slate-900">
+                    {isOut && (
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                        Rupture
+                      </span>
+                    )}
 
-              {item.products.name}
+                    {!isOut && isLow && (
+                      <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
+                        Sous seuil
+                      </span>
+                    )}
+                  </div>
 
-              {item.products.packaging && (
-                <div className="text-xs text-slate-400 mt-1">
-                  {item.products.packaging}
+                  <div className="flex justify-between text-sm">
+                    <span>Stock</span>
+                    <input
+                      type="number"
+                      value={currentStock}
+                      onChange={(e) =>
+                        updateStock(item.product_id, e.target.value)
+                      }
+                      className="w-20 border rounded text-center"
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-sm text-slate-500">
+                    <span>Seuil</span>
+                    <span>{item.low_stock_threshold}</span>
+                  </div>
+
+                  <div className="flex justify-between text-sm">
+                    <span>Commander</span>
+                    <input
+                      type="number"
+                      value={
+                        orderDraft[item.product_id] ??
+                        suggestedOrder
+                      }
+                      onChange={(e) =>
+                        updateOrder(item.product_id, e.target.value)
+                      }
+                      className="w-20 border rounded text-center"
+                    />
+                  </div>
+
                 </div>
-              )}
+              )
+            })}
 
-            </td>
-
-            <td className="px-6 py-4 text-center font-semibold">
-              {item.quantity}
-            </td>
-
-            <td className="px-6 py-4 text-center text-slate-400">
-              {item.low_stock_threshold}
-            </td>
-
-            <td className="px-6 py-4 text-center">
-
-              <input
-                type="number"
-                min="0"
-                value={orderDraft[item.product_id] || ""}
-                onChange={(e) =>
-                  updateOrder(item.product_id, e.target.value)
-                }
-                className="w-20 border border-slate-300 rounded-lg p-2 text-center text-sm"
-              />
-
-            </td>
-
-          </tr>
-
-        ))}
-
-      </tbody>
-
-    </table>
-
-  </div>
-
-  {/* CARTES MOBILE */}
-  <div className="md:hidden space-y-4">
-
-    {items.map(item => (
-
-      <div
-        key={item.product_id}
-        className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3"
-      >
-
-        <div className="font-semibold text-slate-900">
-          {item.products.name}
-
-          {item.products.packaging && (
-            <div className="text-xs text-slate-400">
-              {item.products.packaging}
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-between text-sm">
-          <span className="text-slate-600">Stock</span>
-          <span className="font-semibold">{item.quantity}</span>
-        </div>
-
-        <div className="flex justify-between text-sm">
-          <span className="text-slate-600">Seuil</span>
-          <span className="text-slate-500">
-            {item.low_stock_threshold}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center pt-2">
-
-          <span className="text-sm text-slate-600">
-            Commander
-          </span>
-
-          <input
-            type="number"
-            min="0"
-            value={orderDraft[item.product_id] || ""}
-            onChange={(e) =>
-              updateOrder(item.product_id, e.target.value)
-            }
-            className="w-24 border border-slate-300 rounded-lg p-2 text-center text-sm"
-          />
-
-        </div>
-
-      </div>
-
-    ))}
-
-  </div>
-
-</div>
+          </div>
 
         </div>
 
       ))}
 
       <button
-        onClick={handleBulkOrder}
+        onClick={handleValidate}
         disabled={isSubmitting}
         className="bg-slate-900 text-white px-6 py-2 rounded-lg"
       >
-        {isSubmitting ? "Envoi..." : "Valider la commande"}
+        {isSubmitting ? "Enregistrement..." : "Valider"}
       </button>
 
-      {message && (
-        <p className="text-sm text-slate-600">
-          {message}
-        </p>
-      )}
+      {message && <div>{message}</div>}
 
     </div>
   )

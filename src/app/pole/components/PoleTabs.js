@@ -4,8 +4,6 @@ import { useState } from "react"
 
 import OrdersTab from "./OrdersTab"
 import MessagingTab from "./MessagingTab"
-import GlobalStockTable from "@/components/stock/GlobalStockTable"
-import StockExitTab from "./StockExitTab"
 
 export default function PoleTabs({ locationId }) {
 
@@ -13,8 +11,6 @@ export default function PoleTabs({ locationId }) {
 
   const tabs = [
     { id: "orders", label: "Commandes" },
-    { id: "exit", label: "Sortie de stock" },
-    { id: "stock", label: "Stock" },
     { id: "messages", label: "Messagerie" }
   ]
 
@@ -54,10 +50,6 @@ export default function PoleTabs({ locationId }) {
 
         {activeTab === "exit" && (
           <StockExitTab locationId={locationId} />
-        )}
-
-        {activeTab === "stock" && (
-          <GlobalStockTable highlightLocationId={locationId} />
         )}
 
         {activeTab === "messages" && (

@@ -1,14 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { act, useState } from "react"
 
 import OverviewTab from "./OverviewTab"
+import StockEntryTab from "./StockEntryTab"
 import StockGlobalTab from "./StockGlobalTab"
 import ProductsTab from "./ProductsTab"
 import ThresholdsTab from "./ThresholdsTab"
 import LocationsTab from "./LocationsTab"
 import MovementsTab from "./MovementsTab"
 import AnalyticsTab from "./analytics/AnalyticsTab"
+import FreeTransferTab from "./FreeTransferTab"
 
 export default function AdminTabs() {
 
@@ -23,6 +25,8 @@ export default function AdminTabs() {
       <div className="flex gap-6 flex-wrap">
 
         <TabButton label="Vue d'ensemble" value="overview" activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton label="Entrée Stock" value="entry" activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton label="Paninis" value="free" activeTab={activeTab} setActiveTab={setActiveTab} />
         <TabButton label="Stock Global" value="stock" activeTab={activeTab} setActiveTab={setActiveTab} />
         <TabButton label="Produits" value="products" activeTab={activeTab} setActiveTab={setActiveTab} />
         <TabButton label="Seuils" value="thresholds" activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -37,6 +41,8 @@ export default function AdminTabs() {
     {/* CONTENT */}
     <div className="pt-2">
       {activeTab === "overview" && <OverviewTab />}
+      {activeTab === "entry" && <StockEntryTab />}
+      {activeTab === "free" && <FreeTransferTab />}
       {activeTab === "stock" && <StockGlobalTab />}
       {activeTab === "products" && <ProductsTab />}
       {activeTab === "thresholds" && <ThresholdsTab />}

@@ -8,6 +8,7 @@ import OrdersTransfersTab from "./components/OrdersTransfersTab"
 import EntriesTab from "./components/EntriesTab"
 import StockTab from "./components/StockTab"
 import MessagingTab from "./components/MessagingTab"
+import FreeTransferTab from "@/app/admin/components/FreeTransferTab"
 
 import GlobalStockTable from "@/components/stock/GlobalStockTable"
 import Navbar from "@/components/layout/Navbar"
@@ -87,6 +88,10 @@ export default function LivreurPage() {
 
           {activeTab === "orders" && (
             <OrdersTransfersTab locationId={locationId} />
+          )}
+
+          {activeTab === "delivery" && (
+            <FreeTransferTab role="livreur" />
           )}
 
           {activeTab === "entries" && (

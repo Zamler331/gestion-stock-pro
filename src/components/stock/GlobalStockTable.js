@@ -65,7 +65,7 @@ const reserveLocations = useMemo(
   /* ========================= */
 
   return visibleProducts.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+    (p.name || "").toLowerCase().includes(search.toLowerCase())
   )
 
 }, [products, search, highlightLocationId])
