@@ -3,25 +3,22 @@
 import { useState } from "react"
 
 import OrdersTab from "./OrdersTab"
+import DlcTab from "./DlcTab"
 import MessagingTab from "./MessagingTab"
 
 export default function PoleTabs({ locationId }) {
-
   const [activeTab, setActiveTab] = useState("orders")
 
   const tabs = [
     { id: "orders", label: "Commandes" },
-    { id: "messages", label: "Messagerie" }
+    { id: "dlc", label: "Paninis" },
+    { id: "messages", label: "Messagerie" },
   ]
 
   return (
     <div className="space-y-8">
-
-      {/* TABS */}
       <div className="flex gap-2 border-b border-slate-300 pb-2">
-
-        {tabs.map(tab => (
-
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -36,28 +33,14 @@ export default function PoleTabs({ locationId }) {
           >
             {tab.label}
           </button>
-
         ))}
-
       </div>
 
-      {/* CONTENT */}
       <div>
-
-        {activeTab === "orders" && (
-          <OrdersTab />
-        )}
-
-        {activeTab === "exit" && (
-          <StockExitTab locationId={locationId} />
-        )}
-
-        {activeTab === "messages" && (
-          <MessagingTab locationId={locationId} />
-        )}
-
+        {activeTab === "orders" && <OrdersTab />}
+        {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={false}/>}
+        {activeTab === "messages" && <MessagingTab locationId={locationId} />}
       </div>
-
     </div>
   )
 }
