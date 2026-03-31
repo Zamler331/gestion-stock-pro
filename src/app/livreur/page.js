@@ -87,7 +87,7 @@ export default function LivreurPage() {
           {activeTab === "stock" && (
             <>
               <StockTab />
-              <GlobalStockTable />
+              <GlobalStockTable editable={true} editableTypes={["pole"]} />
             </>
           )}
 

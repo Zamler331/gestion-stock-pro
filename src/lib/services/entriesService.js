@@ -4,40 +4,69 @@ export async function executeSupplierEntry({
   productId,
   locationId,
   quantity,
-  annotation = ""
+  annotation = "",
+  expirationDate = null,
 }) {
+  if (!productId) {
+    throw new Error("Produit requis")
+  }
 
-  if (!quantity || quantity <= 0) {
+  if (!locationId) {
+    throw new Error("Réserve requise")
+  }
+
+  if (!quantity || Number(quantity) <= 0) {
     throw new Error("Quantité invalide")
   }
 
-  // 1️⃣ Récupérer stock existant
-  const { data: stock, error } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", productId)
-    .eq("location_id", locationId)
-    .single()
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
 
-  if (error || !stock) {
-    throw new Error("Stock introuvable")
+  if (userError) throw userError
+  if (!user) {
+    throw new Error("Utilisateur non authentifié")
   }
 
-  // 2️⃣ Mettre à jour stock
-  await supabase
-    .from("stocks")
-    .update({ quantity: stock.quantity + quantity })
-    .eq("id", stock.id)
+  const qty = Number(quantity)
 
-  // 3️⃣ Créer mouvement
-  const { data: { user } } = await supabase.auth.getUser()
+  /* 1️⃣ Créer mouvement */
+  const { data: movement, error: movementError } = await supabase
+    .from("movements")
+    .insert({
+      product_id: productId,
+      type: "entry",
+      quantity: qty,
+      destination_location_id: locationId,
+      user_id: user.id,
+      annotation: annotation || "Entrée fournisseur",
+    })
+    .select()
+    .single()
 
-  await supabase.from("movements").insert([{
-    product_id: productId,
-    type: "entry",
-    quantity,
-    destination_location_id: locationId,
-    user_id: user.id,
-    annotation
-  }])
+  if (movementError) {
+    throw new Error(movementError.message)
+  }
+
+  if (!movement) {
+    throw new Error("Impossible de créer le mouvement")
+  }
+
+  /* 2️⃣ Créer batch */
+  const { error: batchError } = await supabase
+    .from("stock_batches")
+    .insert({
+      product_id: productId,
+      location_id: locationId,
+      quantity: qty,
+      expiration_date: expirationDate || null,
+      source_movement_id: movement.id,
+    })
+
+  if (batchError) {
+    throw new Error(batchError.message)
+  }
+
+  return true
 }

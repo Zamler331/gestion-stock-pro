@@ -104,7 +104,9 @@ export default function StockEntryTab() {
         location_id: selectedLocation,
         quantity: parseInt(quantity),
         expiration_date: expirationDate || null,
-        effective_date: effectiveDate || null
+        effective_date: effectiveDate
+          ? new Date(effectiveDate + "T00:00:00")
+          : null
       })
 
       setMessage("Entrée enregistrée ✅")
@@ -222,7 +224,7 @@ export default function StockEntryTab() {
               Date d'effet
             </label>
             <input
-              type="datetime-local"
+              type="date"
               value={effectiveDate}
               onChange={(e) => setEffectiveDate(e.target.value)}
               className="border px-3 py-2 rounded-lg w-full"
