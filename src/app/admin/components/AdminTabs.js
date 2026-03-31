@@ -83,7 +83,7 @@ export default function AdminTabs() {
         {activeTab === "overview" && <OverviewTab />}
         {activeTab === "entry" && <StockEntryTab />}
         {activeTab === "free" && <FreeTransferTab />}
-        {activeTab === "dlc" && <DlcTab canAddBatch={true} />}
+        {activeTab === "dlc" && <DlcTab canAddBatch={true} allowLocationSelect={true} />}
         {activeTab === "stock" && <StockGlobalTab />}
         {activeTab === "products" && <ProductsTab />}
         {activeTab === "thresholds" && <ThresholdsTab />}

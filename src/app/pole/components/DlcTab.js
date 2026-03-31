@@ -3,8 +3,15 @@
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
-export default function DlcTab({ locationId, canAddBatch = false }) {
+export default function DlcTab({
+  locationId,
+  canAddBatch = false,
+  allowLocationSelect = false,
+}) {
   const [myLocationId, setMyLocationId] = useState(locationId || null)
+  const [targetLocationId, setTargetLocationId] = useState(locationId || "")
+  const [availableLocations, setAvailableLocations] = useState([])
+
   const [batches, setBatches] = useState([])
   const [batchDraft, setBatchDraft] = useState({})
   const [products, setProducts] = useState([])
@@ -22,16 +29,35 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
   useEffect(() => {
     if (locationId) {
       setMyLocationId(locationId)
+      if (!allowLocationSelect) {
+        setTargetLocationId(locationId)
+      }
     } else {
       fetchMyLocation()
     }
-  }, [locationId])
+  }, [locationId, allowLocationSelect])
 
   useEffect(() => {
-    if (myLocationId) {
-      fetchDlcData()
+    if (allowLocationSelect) {
+      fetchPoleLocations()
     }
-  }, [myLocationId])
+  }, [allowLocationSelect])
+
+  useEffect(() => {
+    if (myLocationId && !allowLocationSelect && locationId) {
+      setTargetLocationId(locationId)
+    }
+  }, [myLocationId, allowLocationSelect, locationId])
+
+  useEffect(() => {
+    if (targetLocationId) {
+      fetchDlcData()
+    } else {
+      setProducts([])
+      setBatches([])
+      setBatchDraft({})
+    }
+  }, [targetLocationId])
 
   async function fetchMyLocation() {
     const {
@@ -59,7 +85,32 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
 
     if (data?.location_id) {
       setMyLocationId(data.location_id)
+
+      if (!allowLocationSelect) {
+        setTargetLocationId(data.location_id)
+      }
     }
+  }
+
+  async function fetchPoleLocations() {
+    const { data, error } = await supabase
+      .from("locations")
+      .select("id, name")
+      .eq("type", "pole")
+      .order("name")
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    const poles = data || []
+    setAvailableLocations(poles)
+
+    setTargetLocationId((prev) => {
+      if (prev) return prev
+      return poles[0]?.id || ""
+    })
   }
 
   function getBatchStatus(expirationDate) {
@@ -104,7 +155,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
       const { data: visibility, error: visibilityError } = await supabase
         .from("product_location_settings")
         .select("product_id")
-        .eq("location_id", myLocationId)
+        .eq("location_id", targetLocationId)
 
       if (visibilityError) throw visibilityError
 
@@ -140,7 +191,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
       const { data: batchesData, error: batchesError } = await supabase
         .from("stock_batches")
         .select("*")
-        .eq("location_id", myLocationId)
+        .eq("location_id", targetLocationId)
         .in("product_id", dlcProductIds)
         .order("expiration_date", { ascending: true })
 
@@ -234,10 +285,91 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
     }, {})
   }, [filteredBatches])
 
+    async function handleAddBatchOnly() {
+    try {
+      setIsSubmitting(true)
+      setMessage("")
+
+      if (!canAddBatch) {
+        throw new Error("Ajout de lot non autorisé")
+      }
+
+      if (!targetLocationId) {
+        throw new Error("Sélectionnez un pôle")
+      }
+
+      if (!newBatch.product_id) {
+        throw new Error("Choisissez un produit")
+      }
+
+      if (!newBatch.quantity || Number(newBatch.quantity) <= 0) {
+        throw new Error("Quantité invalide")
+      }
+
+      if (!newBatch.expiration_date) {
+        throw new Error("Choisissez une DLC")
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError) throw userError
+      if (!user) throw new Error("Utilisateur non connecté")
+
+      const quantity = Number(newBatch.quantity)
+
+      const { data: movement, error: movementError } = await supabase
+        .from("movements")
+        .insert({
+          product_id: newBatch.product_id,
+          quantity,
+          type: "correction",
+          destination_location_id: targetLocationId,
+          user_id: user.id,
+        })
+        .select()
+        .single()
+
+      if (movementError) throw movementError
+
+      const { error: insertBatchError } = await supabase
+        .from("stock_batches")
+        .insert({
+          product_id: newBatch.product_id,
+          location_id: targetLocationId,
+          quantity,
+          expiration_date: newBatch.expiration_date,
+          source_movement_id: movement.id,
+        })
+
+      if (insertBatchError) throw insertBatchError
+
+      setNewBatch({
+        product_id: "",
+        quantity: "",
+        expiration_date: "",
+      })
+
+      setMessage("Lot ajouté ✅")
+      await fetchDlcData()
+    } catch (err) {
+      console.error(err)
+      setMessage(err.message || "Erreur")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   async function handleValidate() {
     try {
       setIsSubmitting(true)
       setMessage("")
+
+      if (!targetLocationId) {
+        throw new Error("Sélectionnez un pôle")
+      }
 
       const {
         data: { user },
@@ -270,7 +402,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
               product_id: batch.product_id,
               quantity: qtyRemoved,
               type: "sortie",
-              source_location_id: myLocationId,
+              source_location_id: targetLocationId,
               user_id: user.id,
             })
 
@@ -300,7 +432,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
               product_id: batch.product_id,
               quantity: diff,
               type: "correction",
-              source_location_id: myLocationId,
+              source_location_id: targetLocationId,
               user_id: user.id,
             })
             .select()
@@ -334,7 +466,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
             product_id: newBatch.product_id,
             quantity,
             type: "correction",
-            source_location_id: myLocationId,
+            destination_location_id: targetLocationId,
             user_id: user.id,
           })
           .select()
@@ -346,7 +478,7 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
           .from("stock_batches")
           .insert({
             product_id: newBatch.product_id,
-            location_id: myLocationId,
+            location_id: targetLocationId,
             quantity,
             expiration_date: newBatch.expiration_date,
             source_movement_id: movement.id,
@@ -400,6 +532,21 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
   return (
     <div className="space-y-8">
       <h2 className="text-xl font-semibold">Produits avec DLC</h2>
+
+      {allowLocationSelect && (
+        <select
+          value={targetLocationId}
+          onChange={(e) => setTargetLocationId(e.target.value)}
+          className="border px-4 py-2 rounded-lg w-full"
+        >
+          <option value="">Choisir un pôle</option>
+          {availableLocations.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              {loc.name}
+            </option>
+          ))}
+        </select>
+      )}
 
       <div className="grid md:grid-cols-2 gap-3">
         <input
@@ -456,6 +603,14 @@ export default function DlcTab({ locationId, canAddBatch = false }) {
               }
               className="border px-3 py-2 rounded-lg"
             />
+                        <button
+              type="button"
+              onClick={handleAddBatchOnly}
+              disabled={isSubmitting}
+              className="bg-slate-800 text-white px-4 py-2 rounded-lg"
+            >
+              {isSubmitting ? "Ajout..." : "Ajouter le lot"}
+            </button>
           </div>
         </div>
       )}

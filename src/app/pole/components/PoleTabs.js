@@ -38,7 +38,7 @@ export default function PoleTabs({ locationId }) {
 
       <div>
         {activeTab === "orders" && <OrdersTab />}
-        {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={false}/>}
+        {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={false} allowLocationSelect={false} />}
         {activeTab === "messages" && <MessagingTab locationId={locationId} />}
       </div>
     </div>

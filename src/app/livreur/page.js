@@ -82,7 +82,7 @@ export default function LivreurPage() {
 
           {activeTab === "entries" && <EntriesTab />}
 
-          {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={true} />}
+          {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={true} allowLocationSelect={true} />}
 
           {activeTab === "stock" && (
             <>
