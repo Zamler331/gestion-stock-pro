@@ -5,33 +5,33 @@ import { supabase } from "@/lib/supabase"
 /* ============================= */
 
 export async function getPendingOrders(locationId) {
-
   if (!locationId) {
     console.warn("locationId manquant, skip fetchOrders")
     return []
   }
 
   const { data: orders, error: ordersError } = await supabase
-  .from("orders")
-  .select(`
-    id,
-    created_at,
-    destination_location_id,
-    locations (
+    .from("orders")
+    .select(`
       id,
-      name
-    ),
-    order_items (
-      id,
-      product_id,
-      quantity_ordered,
-      products (
+      created_at,
+      destination_location_id,
+      locations (
         id,
-        name,
-        packaging
+        name
+      ),
+      order_items (
+        id,
+        product_id,
+        quantity_ordered,
+        products:product_id (
+          id,
+          name,
+          packaging,
+          categories(name)
+        )
       )
-    )
-  `)
+    `)
     .eq("status", "pending")
     .order("created_at", { ascending: false })
 
@@ -45,7 +45,6 @@ export async function getPendingOrders(locationId) {
   return orders || []
 }
 
-
 /* ============================= */
 /* 📦 Valider une commande complète */
 /* ============================= */
@@ -55,8 +54,9 @@ export async function validateFullOrder(
   reserveId,
   deliveryQuantities
 ) {
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
     throw new Error("Utilisateur non authentifié")
@@ -67,7 +67,6 @@ export async function validateFullOrder(
   }
 
   for (const item of order.order_items) {
-
     const deliveredQty = deliveryQuantities[item.id] || 0
 
     /* ============================= */
@@ -82,17 +81,21 @@ export async function validateFullOrder(
       .single()
 
     if (reserveError || !reserveStock) {
-      throw new Error(`Stock réserve introuvable pour ${item.products?.name || "produit"}`)
+      throw new Error(
+        `Stock réserve introuvable pour ${item.products?.name || "produit"}`
+      )
     }
 
     if (reserveStock.quantity < deliveredQty) {
-      throw new Error(`Stock insuffisant pour ${item.products?.name || "produit"}`)
+      throw new Error(
+        `Stock insuffisant pour ${item.products?.name || "produit"}`
+      )
     }
 
     await supabase
       .from("stocks")
       .update({
-        quantity: reserveStock.quantity - deliveredQty
+        quantity: reserveStock.quantity - deliveredQty,
       })
       .eq("id", reserveStock.id)
 
@@ -108,13 +111,15 @@ export async function validateFullOrder(
       .single()
 
     if (poleError || !poleStock) {
-      throw new Error(`Stock pôle introuvable pour ${item.products?.name || "produit"}`)
+      throw new Error(
+        `Stock pôle introuvable pour ${item.products?.name || "produit"}`
+      )
     }
 
     await supabase
       .from("stocks")
       .update({
-        quantity: poleStock.quantity + deliveredQty
+        quantity: poleStock.quantity + deliveredQty,
       })
       .eq("id", poleStock.id)
 
@@ -129,7 +134,7 @@ export async function validateFullOrder(
       source_location_id: reserveId,
       destination_location_id: order.destination_location_id,
       user_id: user.id,
-      annotation: `Livraison commande ${order.id}`
+      annotation: `Livraison commande ${order.id}`,
     })
 
     /* ============================= */
@@ -144,8 +149,8 @@ export async function validateFullOrder(
           deliveredQty === 0
             ? "cancelled"
             : deliveredQty < item.quantity_ordered
-            ? "partial"
-            : "delivered"
+              ? "partial"
+              : "delivered",
       })
       .eq("id", item.id)
 
@@ -154,14 +159,12 @@ export async function validateFullOrder(
     /* ============================= */
 
     if (deliveredQty < item.quantity_ordered) {
-
       await supabase.from("notifications").insert({
         location_id: order.destination_location_id,
         product_id: item.product_id,
         message: `Livraison partielle : ${deliveredQty}/${item.quantity_ordered} pour ${item.products?.name || "produit"}`,
-        read: false
+        read: false,
       })
-
     }
   }
 
@@ -174,7 +177,7 @@ export async function validateFullOrder(
     .update({
       status: "delivered",
       validated_at: new Date(),
-      validated_by: user.id
+      validated_by: user.id,
     })
     .eq("id", order.id)
 

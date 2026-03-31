@@ -3,8 +3,22 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
-export default function StockTab({ locationId }) {
+const CATEGORY_ORDER = [
+  "Epicerie",
+  "Paninis",
+  "Frais",
+  "Surgelé",
+  "Boissons",
+  "Boissons (NICO)",
+  "Glaces (cônes)",
+  "Glaces (boules)",
+  "Granités/Frozzen",
+  "Confiseries",
+  "Matériel",
+  "Sans catégorie",
+]
 
+export default function StockTab({ locationId }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -13,9 +27,7 @@ export default function StockTab({ locationId }) {
   }, [locationId])
 
   async function fetchStocks() {
-
     try {
-
       setLoading(true)
 
       /* ========================= */
@@ -33,7 +45,7 @@ export default function StockTab({ locationId }) {
         return
       }
 
-      const reserveIds = reserves?.map(r => r.id) || []
+      const reserveIds = reserves?.map((r) => r.id) || []
       const reserveSet = new Set(reserveIds)
 
       /* ========================= */
@@ -51,8 +63,7 @@ export default function StockTab({ locationId }) {
         return
       }
 
-      const visibleProductIds =
-        visibility?.map(v => v.product_id) || []
+      const visibleProductIds = visibility?.map((v) => v.product_id) || []
 
       if (visibleProductIds.length === 0) {
         setRows([])
@@ -71,7 +82,8 @@ export default function StockTab({ locationId }) {
           location_id,
           products:product_id (
             name,
-            packaging
+            packaging,
+            categories(name)
           )
         `)
         .in("location_id", [locationId, ...reserveIds])
@@ -89,53 +101,65 @@ export default function StockTab({ locationId }) {
 
       const merged = {}
 
-      data.forEach(item => {
+      data.forEach((item) => {
+        if (!item.products) return
 
-  if (!item.products) return
+        if (!merged[item.product_id]) {
+          merged[item.product_id] = {
+            name: item.products.name,
+            packaging: item.products.packaging,
+            category: item.products.categories?.name || "Sans catégorie",
+            poleStock: 0,
+            reserveStock: 0,
+          }
+        }
 
-  if (!merged[item.product_id]) {
-    merged[item.product_id] = {
-      name: item.products.name,
-      packaging: item.products.packaging,
-      poleStock: 0,
-      reserveStock: 0
-    }
-  }
+        /* Stock du pôle uniquement */
+        if (item.location_id === locationId) {
+          merged[item.product_id].poleStock = item.quantity
+        }
 
-  /* Stock du pôle uniquement */
-  if (item.location_id === locationId) {
-    merged[item.product_id].poleStock = item.quantity
-  }
+        /* Stock des réserves uniquement */
+        if (reserveSet.has(item.location_id)) {
+          merged[item.product_id].reserveStock += item.quantity
+        }
+      })
 
-  /* Stock des réserves uniquement */
-  if (reserveSet.has(item.location_id)) {
-    merged[item.product_id].reserveStock += item.quantity
-  }
+      const sortedRows = Object.values(merged).sort((a, b) => {
+        const categoryA = a.category || "Sans catégorie"
+        const categoryB = b.category || "Sans catégorie"
 
-})
+        const indexA = CATEGORY_ORDER.indexOf(categoryA)
+        const indexB = CATEGORY_ORDER.indexOf(categoryB)
 
+        const aKnown = indexA !== -1
+        const bKnown = indexB !== -1
 
-      setRows(Object.values(merged))
+        if (aKnown && bKnown && indexA !== indexB) {
+          return indexA - indexB
+        }
 
+        if (aKnown && !bKnown) return -1
+        if (!aKnown && bKnown) return 1
+
+        const categoryCompare = categoryA.localeCompare(categoryB, "fr")
+        if (categoryCompare !== 0) return categoryCompare
+
+        return a.name.localeCompare(b.name, "fr")
+      })
+
+      setRows(sortedRows)
     } catch (err) {
-
       console.error("Erreur fetchStocks :", err)
       setRows([])
-
     } finally {
-
       setLoading(false)
-
     }
-
   }
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-
-      <h2 className="text-xl font-semibold mb-6">
-        Stock détaillé
-      </h2>
+      <h2 className="text-xl font-semibold mb-6">Stock détaillé</h2>
 
       {loading && (
         <div className="text-sm text-slate-500">
@@ -152,7 +176,6 @@ export default function StockTab({ locationId }) {
       {!loading && rows.length > 0 && (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-
             <thead className="bg-slate-100 text-xs uppercase text-slate-600">
               <tr>
                 <th className="px-6 py-4 text-left">Produit</th>
@@ -162,18 +185,16 @@ export default function StockTab({ locationId }) {
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-
               {rows.map((row, index) => (
-
                 <tr
                   key={index}
                   className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}
                 >
-
                   <td className="px-6 py-4 text-slate-900">
+                    <div className="font-medium">{row.name}</div>
 
-                    <div className="font-medium">
-                      {row.name}
+                    <div className="text-xs text-slate-400 mt-1">
+                      {row.category}
                     </div>
 
                     {row.packaging && (
@@ -181,7 +202,6 @@ export default function StockTab({ locationId }) {
                         {row.packaging}
                       </div>
                     )}
-
                   </td>
 
                   <td className="px-6 py-4 text-center font-semibold">
@@ -191,17 +211,12 @@ export default function StockTab({ locationId }) {
                   <td className="px-6 py-4 text-center font-semibold text-slate-500">
                     {row.reserveStock}
                   </td>
-
                 </tr>
-
               ))}
-
             </tbody>
-
           </table>
         </div>
       )}
-
     </div>
   )
 }
