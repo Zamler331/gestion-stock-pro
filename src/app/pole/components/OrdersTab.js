@@ -207,10 +207,7 @@ export default function OrdersTab() {
 
         finalData.forEach((p) => {
           if (next[p.product_id] === undefined) {
-            next[p.product_id] = Math.max(
-              p.low_stock_threshold - p.quantity,
-              0
-            )
+            next[p.product_id] = 0
           }
         })
 
@@ -582,10 +579,7 @@ export default function OrdersTab() {
                       currentStock > 0 &&
                       currentStock <= item.low_stock_threshold
 
-                    const suggestedOrder = Math.max(
-                      item.low_stock_threshold - currentStock,
-                      0
-                    )
+                    const suggestedOrder = 0
 
                     return (
                       <div
