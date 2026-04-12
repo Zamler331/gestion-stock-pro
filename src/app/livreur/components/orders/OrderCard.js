@@ -131,6 +131,49 @@ export default function OrderCard({ order, onValidated }) {
     }))
   }
 
+  async function getValidReserveBatches(productId, reserveId) {
+    const { data: batches, error: batchesError } = await supabase
+      .from("stock_batches")
+      .select("*")
+      .eq("product_id", productId)
+      .eq("location_id", reserveId)
+      .order("created_at", { ascending: true })
+
+    if (batchesError) throw batchesError
+
+    const sourceMovementIds = [
+      ...new Set((batches || []).map((b) => b.source_movement_id).filter(Boolean)),
+    ]
+
+    let movementMap = {}
+
+    if (sourceMovementIds.length > 0) {
+      const { data: movements, error: movementsError } = await supabase
+        .from("movements")
+        .select("id, effective_date")
+        .in("id", sourceMovementIds)
+
+      if (movementsError) throw movementsError
+
+      movements?.forEach((m) => {
+        movementMap[m.id] = m.effective_date
+      })
+    }
+
+    const now = new Date()
+
+    return (batches || []).filter((b) => {
+      const notExpired =
+        !b.expiration_date || new Date(b.expiration_date) > now
+
+      const effectiveDate = movementMap[b.source_movement_id]
+      const isActive =
+        !effectiveDate || new Date(effectiveDate) <= now
+
+      return notExpired && isActive && Number(b.quantity || 0) > 0
+    })
+  }
+
   async function validateOrder() {
     try {
       setIsSubmitting(true)
@@ -145,7 +188,7 @@ export default function OrderCard({ order, onValidated }) {
       const partialItems = []
 
       for (const item of order.order_items) {
-        const deliveredQty = deliveryQuantities[item.id] || 0
+        const deliveredQty = Number(deliveryQuantities[item.id] || 0)
         const reserveId = selectedReserves[item.id]
 
         if (deliveredQty > 0 && !reserveId) {
@@ -153,51 +196,105 @@ export default function OrderCard({ order, onValidated }) {
         }
 
         if (deliveredQty > 0) {
-          const { data: reserveStock, error: reserveError } = await supabase
-            .from("stocks")
-            .select("*")
-            .eq("product_id", item.product_id)
-            .eq("location_id", reserveId)
-            .single()
+          const validBatches = await getValidReserveBatches(
+            item.product_id,
+            reserveId
+          )
 
-          if (reserveError || !reserveStock) {
-            throw new Error(`Stock introuvable pour ${item.products.name}`)
+          const reserveAvailable = validBatches.reduce(
+            (sum, batch) => sum + Number(batch.quantity || 0),
+            0
+          )
+
+          const canDeliverFromReserve = reserveAvailable >= deliveredQty
+
+          if (canDeliverFromReserve) {
+            const { data: movement, error: movementError } = await supabase
+              .from("movements")
+              .insert({
+                product_id: item.product_id,
+                type: "livraison",
+                quantity: deliveredQty,
+                source_location_id: reserveId,
+                destination_location_id: order.destination_location_id,
+                user_id: user.id,
+                annotation: `Livraison commande ${order.id}`,
+              })
+              .select()
+              .single()
+
+            if (movementError) throw movementError
+            if (!movement) throw new Error("Impossible de créer le mouvement")
+
+            let remaining = deliveredQty
+
+            for (const batch of validBatches) {
+              if (remaining <= 0) break
+
+              const batchQty = Number(batch.quantity || 0)
+
+              if (batchQty <= remaining) {
+                const { error: deleteError } = await supabase
+                  .from("stock_batches")
+                  .delete()
+                  .eq("id", batch.id)
+
+                if (deleteError) throw deleteError
+
+                remaining -= batchQty
+              } else {
+                const { error: updateError } = await supabase
+                  .from("stock_batches")
+                  .update({
+                    quantity: batchQty - remaining,
+                  })
+                  .eq("id", batch.id)
+
+                if (updateError) throw updateError
+
+                remaining = 0
+              }
+            }
+
+            const { error: insertBatchError } = await supabase
+              .from("stock_batches")
+              .insert({
+                product_id: item.product_id,
+                location_id: order.destination_location_id,
+                quantity: deliveredQty,
+                source_movement_id: movement.id,
+              })
+
+            if (insertBatchError) throw insertBatchError
+          } else {
+            const { data: movement, error: movementError } = await supabase
+              .from("movements")
+              .insert({
+                product_id: item.product_id,
+                type: "transfert_libre",
+                quantity: deliveredQty,
+                source_location_id: reserveId,
+                destination_location_id: order.destination_location_id,
+                user_id: user.id,
+                annotation: `Livraison terrain auto commande ${order.id}`,
+              })
+              .select()
+              .single()
+
+            if (movementError) throw movementError
+            if (!movement) throw new Error("Impossible de créer le mouvement terrain")
+
+            const { error: batchError } = await supabase
+              .from("stock_batches")
+              .insert({
+                product_id: item.product_id,
+                location_id: order.destination_location_id,
+                quantity: deliveredQty,
+                source_movement_id: movement.id,
+              })
+
+            if (batchError) throw batchError
           }
-
-          if (reserveStock.quantity < deliveredQty) {
-            throw new Error(`Stock insuffisant pour ${item.products.name}`)
-          }
-
-          await supabase
-            .from("stocks")
-            .update({
-              quantity: reserveStock.quantity - deliveredQty,
-            })
-            .eq("id", reserveStock.id)
-
-          const { data: poleStock } = await supabase
-            .from("stocks")
-            .select("*")
-            .eq("product_id", item.product_id)
-            .eq("location_id", order.destination_location_id)
-            .single()
-
-          await supabase
-            .from("stocks")
-            .update({
-              quantity: poleStock.quantity + deliveredQty,
-            })
-            .eq("id", poleStock.id)
-
-          await supabase.from("movements").insert({
-            product_id: item.product_id,
-            type: "livraison",
-            quantity: deliveredQty,
-            source_location_id: reserveId,
-            destination_location_id: order.destination_location_id,
-            user_id: user.id,
-            annotation: `Livraison commande ${order.id}`,
-          })
         }
 
         await supabase
