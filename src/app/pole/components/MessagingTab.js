@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 
 export default function MessagingTab({ locationId }) {
-
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState("")
   const [unreadCount, setUnreadCount] = useState(0)
@@ -17,11 +16,11 @@ export default function MessagingTab({ locationId }) {
   /* ========================= */
 
   useEffect(() => {
-
     async function getUser() {
-
-      const { data: { user }, error } =
-        await supabase.auth.getUser()
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
 
       if (error) {
         console.error("Erreur auth :", error)
@@ -32,7 +31,6 @@ export default function MessagingTab({ locationId }) {
     }
 
     getUser()
-
   }, [])
 
   /* ========================= */
@@ -40,7 +38,6 @@ export default function MessagingTab({ locationId }) {
   /* ========================= */
 
   useEffect(() => {
-
     if (!locationId) return
 
     fetchMessages()
@@ -53,22 +50,19 @@ export default function MessagingTab({ locationId }) {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `location_id=eq.${locationId}`
+          filter: `location_id=eq.${locationId}`,
         },
         (payload) => {
-
           const newMsg = payload.new
 
-          setMessages(prev => {
-
+          setMessages((prev) => {
             // évite doublons
-            if (prev.find(m => m.id === newMsg.id)) {
+            if (prev.find((m) => m.id === newMsg.id)) {
               return prev
             }
 
             return [...prev, newMsg]
           })
-
         }
       )
       .subscribe()
@@ -76,7 +70,6 @@ export default function MessagingTab({ locationId }) {
     return () => {
       supabase.removeChannel(channel)
     }
-
   }, [locationId])
 
   /* ========================= */
@@ -84,7 +77,6 @@ export default function MessagingTab({ locationId }) {
   /* ========================= */
 
   async function fetchMessages() {
-
     const { data, error } = await supabase
       .from("messages")
       .select("*")
@@ -98,11 +90,12 @@ export default function MessagingTab({ locationId }) {
 
     setMessages(data || [])
 
-    const unread = data?.filter(
-      m =>
-        m.receiver_role === "pole" &&
-        m.read === false
-    ).length
+    const unread =
+      data?.filter(
+        (m) =>
+          m.receiver_role === "pole" &&
+          m.read === false
+      ).length || 0
 
     setUnreadCount(unread)
 
@@ -120,7 +113,7 @@ export default function MessagingTab({ locationId }) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth"
+      behavior: "smooth",
     })
   }, [messages])
 
@@ -129,20 +122,21 @@ export default function MessagingTab({ locationId }) {
   /* ========================= */
 
   async function sendMessage() {
-
     if (!newMessage.trim()) return
     if (!userId) return
 
     const { error } = await supabase
       .from("messages")
-      .insert([{
-        sender_id: userId,
-        receiver_role: "livreur",
-        location_id: locationId,
-        content: newMessage,
-        type: "message",
-        read: false
-      }])
+      .insert([
+        {
+          sender_id: userId,
+          receiver_role: "livreur",
+          location_id: locationId,
+          content: newMessage,
+          type: "message",
+          read: false,
+        },
+      ])
 
     if (error) {
       console.error("Erreur envoi message :", error)
@@ -157,11 +151,8 @@ export default function MessagingTab({ locationId }) {
   /* ========================= */
 
   return (
-
     <div className="space-y-6">
-
       <div className="flex items-center gap-3">
-
         <h2 className="text-2xl font-bold">
           Messagerie
         </h2>
@@ -171,21 +162,16 @@ export default function MessagingTab({ locationId }) {
             {unreadCount}
           </span>
         )}
-
       </div>
 
       <div className="bg-white rounded-2xl shadow p-6 h-[450px] flex flex-col">
-
         {/* Messages */}
 
         <div className="flex-1 overflow-y-auto space-y-4">
-
-          {messages.map(msg => {
-
+          {messages.map((msg) => {
             const isMine = msg.sender_id === userId
 
             return (
-
               <div
                 key={msg.id}
                 className={`flex ${
@@ -194,63 +180,68 @@ export default function MessagingTab({ locationId }) {
                     : "justify-start"
                 }`}
               >
-
                 <div
-                  className={`px-4 py-2 rounded-2xl max-w-xs text-sm ${
-                    isMine
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-200 text-gray-800"
-                  }`}
+                  className={`
+                    px-4 py-2 rounded-2xl max-w-xs text-sm
+                    ${
+                      isMine
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-200 text-gray-800"
+                    }
+                  `}
                 >
-
-                  {msg.content}
-
-                  <div className="text-xs opacity-70 mt-1">
-                    {new Date(msg.created_at)
-                      .toLocaleString("fr-FR")}
+                  <div className="whitespace-pre-wrap break-words">
+                    {msg.content}
                   </div>
 
+                  <div className="text-xs opacity-70 mt-1">
+                    {new Date(msg.created_at).toLocaleString("fr-FR")}
+                  </div>
                 </div>
-
               </div>
-
             )
-
           })}
 
           <div ref={messagesEndRef} />
-
         </div>
 
         {/* Input */}
 
-        <div className="mt-4 flex gap-3">
-
-          <input
+        <div className="mt-4 flex gap-3 items-end">
+          <textarea
             value={newMessage}
-            onChange={(e) =>
-              setNewMessage(e.target.value)
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage()
-            }}
+            onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Écrire un message..."
-            className="flex-1 border rounded-lg px-3 py-2"
+            rows={4}
+            className="
+              border border-slate-300
+              px-4 py-3
+              rounded-xl
+              w-full
+              resize-none
+              whitespace-pre-wrap
+              break-words
+              focus:outline-none
+              focus:ring-2
+              focus:ring-blue-500
+            "
           />
 
           <button
             onClick={sendMessage}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+            className="
+              bg-blue-600
+              hover:bg-blue-700
+              text-white
+              px-4 py-3
+              rounded-xl
+              transition-colors
+            "
           >
             Envoyer
           </button>
-
         </div>
-
       </div>
-
     </div>
-
   )
-
 }

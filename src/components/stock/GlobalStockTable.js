@@ -159,7 +159,7 @@ export default function GlobalStockTable({
     return editable && editableTypes.includes(location.type)
   }
 
-  function getEditableLocationsForProduct(product, currentPole, otherPoles, reserveLocs) {
+  function getEditableLocationsForProduct(currentPole, otherPoles, reserveLocs) {
     const orderedLocations = [
       ...(currentPole ? [currentPole] : []),
       ...otherPoles,
@@ -172,7 +172,6 @@ export default function GlobalStockTable({
   async function saveRow(product, currentPole, otherPoles, reserveLocs) {
     try {
       const editableLocations = getEditableLocationsForProduct(
-        product,
         currentPole,
         otherPoles,
         reserveLocs
@@ -253,24 +252,13 @@ export default function GlobalStockTable({
 
         const isOpen = openCategories[category] ?? true
 
-        let hasOut = false
-        let hasLow = false
+        const hasOut = items.some((product) =>
+          Object.values(product.locations || {}).some(
+            (loc) => Number(loc?.quantity || 0) === 0
+          )
+        )
 
-        items.forEach((product) => {
-          Object.values(product.locations || {}).forEach((loc) => {
-            const qty = loc?.quantity ?? 0
-            const threshold = loc?.threshold ?? 5
-
-            if (qty === 0) hasOut = true
-            if (qty > 0 && qty <= threshold) hasLow = true
-          })
-        })
-
-        const alertColor = hasOut
-          ? "bg-red-600"
-          : hasLow
-            ? "bg-orange-500"
-            : "bg-slate-400"
+        const alertColor = hasOut ? "bg-red-600" : "bg-slate-400"
 
         return (
           <div key={category} className="space-y-4">
@@ -523,7 +511,9 @@ export default function GlobalStockTable({
                           disabled={savingRow === product.product_id}
                           className="w-full text-sm bg-slate-900 text-white px-4 py-2 rounded-lg"
                         >
-                          {savingRow === product.product_id ? "Enregistrement..." : "Valider la ligne"}
+                          {savingRow === product.product_id
+                            ? "Enregistrement..."
+                            : "Valider la ligne"}
                         </button>
                       )}
                     </div>
@@ -547,12 +537,8 @@ function EditableStockInputCell({
   value,
   onChange,
 }) {
-  const data = product.locations?.[location.id]
-  const qty = data?.quantity ?? 0
-  const threshold = data?.threshold ?? 5
-
+  const qty = Number(product.locations?.[location.id]?.quantity || 0)
   const isOut = qty === 0
-  const isLow = qty > 0 && qty <= threshold
 
   if (!isEditable) {
     return (
@@ -562,13 +548,7 @@ function EditableStockInputCell({
           transition-colors
           ${highlight ? "bg-slate-100" : ""}
           ${isReserve ? "text-slate-500" : ""}
-          ${
-            isOut
-              ? "text-red-700"
-              : isLow
-                ? "text-orange-600"
-                : "text-slate-800"
-          }
+          ${isOut ? "text-red-700" : "text-slate-800"}
         `}
       >
         {qty}
@@ -601,11 +581,8 @@ function MobileEditableStockRow({
   value,
   onChange,
 }) {
-  const data = product.locations?.[location.id]
-  const qty = data?.quantity ?? 0
-  const threshold = data?.threshold ?? 5
+  const qty = Number(product.locations?.[location.id]?.quantity || 0)
   const isOut = qty === 0
-  const isLow = qty > 0 && qty <= threshold
 
   if (!isEditable) {
     return (
@@ -622,13 +599,7 @@ function MobileEditableStockRow({
         <span
           className={`
             font-semibold
-            ${
-              isOut
-                ? "text-red-700"
-                : isLow
-                  ? "text-orange-600"
-                  : "text-slate-900"
-            }
+            ${isOut ? "text-red-700" : "text-slate-900"}
           `}
         >
           {qty}

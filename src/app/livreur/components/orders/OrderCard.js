@@ -40,13 +40,21 @@ function compareCategories(catA, catB) {
 
 export default function OrderCard({ order, onValidated }) {
   const [deliveryQuantities, setDeliveryQuantities] = useState(
-    Object.fromEntries(
-      order.order_items.map((item) => [item.id, item.quantity_ordered])
-    )
+  Object.fromEntries(
+    order.order_items.map((item) => [
+      item.id,
+      item.quantity_delivered ?? item.quantity_ordered,
+    ])
   )
+)
 
   const [selectedReserves, setSelectedReserves] = useState({})
-  const [checkedItems, setCheckedItems] = useState({})
+  const [checkedItems, setCheckedItems] = useState(
+    Object.fromEntries(
+      order.order_items.map((item) => [item.id, !!item.is_prepared])
+    )
+  )
+  const [savingPreparedItem, setSavingPreparedItem] = useState("")
   const [openCategories, setOpenCategories] = useState({})
   const [reserves, setReserves] = useState([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -75,6 +83,14 @@ export default function OrderCard({ order, onValidated }) {
   useEffect(() => {
     fetchReserves()
   }, [])
+
+  useEffect(() => {
+    setCheckedItems(
+      Object.fromEntries(
+        order.order_items.map((item) => [item.id, !!item.is_prepared])
+      )
+    )
+  }, [order.order_items])
 
   useEffect(() => {
     const isDesktop =
@@ -117,12 +133,35 @@ export default function OrderCard({ order, onValidated }) {
     }))
   }
 
-  function toggleCheckedItem(itemId) {
+  async function toggleCheckedItem(itemId) {
+  try {
+    setError("")
+    setSavingPreparedItem(itemId)
+
+    const nextValue = !checkedItems[itemId]
+    const deliveredQty = Number(deliveryQuantities[itemId] || 0)
+
+    const { error: updateError } = await supabase
+      .from("order_items")
+      .update({
+        is_prepared: nextValue,
+        quantity_delivered: deliveredQty,
+      })
+      .eq("id", itemId)
+
+    if (updateError) throw updateError
+
     setCheckedItems((prev) => ({
       ...prev,
-      [itemId]: !prev[itemId],
+      [itemId]: nextValue,
     }))
+  } catch (err) {
+    console.error(err)
+    setError(err.message || "Erreur lors de la mise à jour")
+  } finally {
+    setSavingPreparedItem("")
   }
+}
 
   function toggleCategory(categoryName) {
     setOpenCategories((prev) => ({
@@ -142,7 +181,9 @@ export default function OrderCard({ order, onValidated }) {
     if (batchesError) throw batchesError
 
     const sourceMovementIds = [
-      ...new Set((batches || []).map((b) => b.source_movement_id).filter(Boolean)),
+      ...new Set(
+        (batches || []).map((b) => b.source_movement_id).filter(Boolean)
+      ),
     ]
 
     let movementMap = {}
@@ -307,6 +348,7 @@ export default function OrderCard({ order, onValidated }) {
                 : deliveredQty < item.quantity_ordered
                   ? "partial"
                   : "delivered",
+            is_prepared: true,
           })
           .eq("id", item.id)
 
@@ -397,6 +439,7 @@ ${partialItems.map((p) => `• ${p.name} : ${p.delivered}/${p.ordered}`).join("\
                     const deliveredQty = deliveryQuantities[item.id] || 0
                     const isPartial = deliveredQty < item.quantity_ordered
                     const isChecked = !!checkedItems[item.id]
+                    const isSavingPrepared = savingPreparedItem === item.id
 
                     return (
                       <div
@@ -484,6 +527,7 @@ ${partialItems.map((p) => `• ${p.name} : ${p.delivered}/${p.ordered}`).join("\
                         <button
                           type="button"
                           onClick={() => toggleCheckedItem(item.id)}
+                          disabled={isSavingPrepared}
                           className={`
                             text-sm font-medium px-3 py-2 rounded-lg border transition-colors
                             ${
@@ -493,7 +537,11 @@ ${partialItems.map((p) => `• ${p.name} : ${p.delivered}/${p.ordered}`).join("\
                             }
                           `}
                         >
-                          {isChecked ? "Marqué comme traité" : "Marquer comme traité"}
+                          {isSavingPrepared
+                            ? "Enregistrement..."
+                            : isChecked
+                              ? "Marqué comme traité"
+                              : "Marquer comme traité"}
                         </button>
                       </div>
                     )

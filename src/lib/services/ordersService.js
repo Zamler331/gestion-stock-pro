@@ -21,6 +21,48 @@ export async function getPendingOrders(locationId) {
         name
       ),
       order_items (
+  id,
+  product_id,
+  quantity_ordered,
+  quantity_delivered,
+  is_prepared,
+  products:product_id (
+    id,
+    name,
+    packaging,
+    categories(name)
+  )
+)
+    `)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+
+  console.log("ORDERS FETCHED:", orders)
+
+  if (ordersError) {
+    console.error("Orders error:", ordersError)
+    throw new Error(ordersError.message)
+  }
+
+  return orders || []
+}
+
+/* ============================= */
+/* 📦 Récupérer toutes les commandes en attente - Admin */
+/* ============================= */
+
+export async function getAllPendingOrders() {
+  const { data: orders, error: ordersError } = await supabase
+    .from("orders")
+    .select(`
+      id,
+      created_at,
+      destination_location_id,
+      locations (
+        id,
+        name
+      ),
+      order_items (
         id,
         product_id,
         quantity_ordered,
@@ -35,10 +77,8 @@ export async function getPendingOrders(locationId) {
     .eq("status", "pending")
     .order("created_at", { ascending: false })
 
-  console.log("ORDERS FETCHED:", orders)
-
   if (ordersError) {
-    console.error("Orders error:", ordersError)
+    console.error("Orders admin error:", ordersError)
     throw new Error(ordersError.message)
   }
 

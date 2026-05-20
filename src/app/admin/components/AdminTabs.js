@@ -6,8 +6,8 @@ import OverviewTab from "./OverviewTab"
 import StockEntryTab from "./StockEntryTab"
 import StockGlobalTab from "./StockGlobalTab"
 import ProductsTab from "./ProductsTab"
-import ThresholdsTab from "./ThresholdsTab"
 import LocationsTab from "./LocationsTab"
+import PendingOrdersAdminTab from "./PendingOrdersAdminTab"
 import MovementsTab from "./MovementsTab"
 import AnalyticsTab from "./analytics/AnalyticsTab"
 import FreeTransferTab from "./FreeTransferTab"
@@ -27,48 +27,56 @@ export default function AdminTabs() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Entrée Stock"
             value="entry"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Paninis"
             value="dlc"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Stock Global"
             value="stock"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Produits"
             value="products"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
-            label="Seuils"
-            value="thresholds"
+            label="Commandes en cours"
+            value="orders"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Lieux"
             value="locations"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Mouvements"
             value="movements"
             activeTab={activeTab}
             setActiveTab={setActiveTab}
           />
+
           <TabButton
             label="Analytics / Exports"
             value="analytics"
@@ -81,21 +89,50 @@ export default function AdminTabs() {
       {/* CONTENT */}
       <div className="pt-2">
         {activeTab === "overview" && <OverviewTab />}
+
         {activeTab === "entry" && <StockEntryTab />}
+
         {activeTab === "free" && <FreeTransferTab />}
-        {activeTab === "dlc" && <DlcTab canAddBatch={true} allowLocationSelect={true} />}
-        {activeTab === "stock" && <StockGlobalTab />}
-        {activeTab === "products" && <ProductsTab />}
-        {activeTab === "thresholds" && <ThresholdsTab />}
-        {activeTab === "locations" && <LocationsTab />}
-        {activeTab === "movements" && <MovementsTab />}
-        {activeTab === "analytics" && <AnalyticsTab />}
+
+        {activeTab === "dlc" && (
+          <DlcTab
+            canAddBatch={true}
+            allowLocationSelect={true}
+          />
+        )}
+
+        {activeTab === "stock" && (
+          <StockGlobalTab />
+        )}
+
+        {activeTab === "products" && (
+          <ProductsTab />
+        )}
+
+        {activeTab === "orders" && <PendingOrdersAdminTab />}
+
+        {activeTab === "locations" && (
+          <LocationsTab />
+        )}
+
+        {activeTab === "movements" && (
+          <MovementsTab />
+        )}
+
+        {activeTab === "analytics" && (
+          <AnalyticsTab />
+        )}
       </div>
     </div>
   )
 }
 
-function TabButton({ label, value, activeTab, setActiveTab }) {
+function TabButton({
+  label,
+  value,
+  activeTab,
+  setActiveTab,
+}) {
   const isActive = activeTab === value
 
   return (

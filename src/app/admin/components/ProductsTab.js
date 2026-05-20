@@ -16,6 +16,9 @@ export default function ProductsTab() {
   const [newCategoryName, setNewCategoryName] = useState("")
   const [search, setSearch] = useState("")
 
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [editingCategoryName, setEditingCategoryName] = useState("")
+
   useEffect(() => {
     fetchData()
   }, [])
@@ -53,6 +56,7 @@ export default function ProductsTab() {
       if (!visibilityMap[v.product_id]) {
         visibilityMap[v.product_id] = {}
       }
+
       visibilityMap[v.product_id][v.location_id] = true
     })
 
@@ -67,77 +71,132 @@ export default function ProductsTab() {
   }
 
   async function createCategory() {
+
     if (!newCategoryName.trim()) return
 
-    await supabase.from("categories").insert([
-      { name: newCategoryName }
-    ])
+    await supabase
+      .from("categories")
+      .insert([
+        { name: newCategoryName }
+      ])
 
     setNewCategoryName("")
     fetchData()
   }
 
-  async function createProduct() {
-
-  if (!newProductName.trim()) return
-
-  try {
-
-    const { data, error } = await supabase
-      .from("products")
-      .insert([{
-        name: newProductName,
-        category_id: newProductCategory || null,
-        packaging: newProductPackaging || null
-      }])
-      .select()
-      .single()
-
-    if (error) throw error
-
-    const { data: locations } = await supabase
-      .from("locations")
-      .select("id")
-
-    const stocksPayload = (locations || []).map(loc => ({
-      product_id: data.id,
-      location_id: loc.id,
-      quantity: 0
-    }))
-
-    await supabase.from("stocks").insert(stocksPayload)
-
-    setNewProductName("")
-    setNewProductCategory("")
-    setNewProductPackaging("")
-
-    fetchData()
-
-  } catch (err) {
-
-    console.error("Erreur createProduct:", err)
-
+  async function startEditCategory(category) {
+    setEditingCategoryId(category.id)
+    setEditingCategoryName(category.name)
   }
 
-}
+  async function saveCategoryEdit() {
+
+    if (!editingCategoryName.trim()) return
+
+    await supabase
+      .from("categories")
+      .update({
+        name: editingCategoryName,
+      })
+      .eq("id", editingCategoryId)
+
+    setEditingCategoryId(null)
+    setEditingCategoryName("")
+
+    fetchData()
+  }
+
+  async function deleteCategory(categoryId) {
+
+    const linkedProducts = products.filter(
+      (p) => p.category_id === categoryId
+    )
+
+    if (linkedProducts.length > 0) {
+      alert("Impossible de supprimer : catégorie utilisée par des produits")
+      return
+    }
+
+    const confirmDelete = window.confirm(
+      "Supprimer cette catégorie ?"
+    )
+
+    if (!confirmDelete) return
+
+    await supabase
+      .from("categories")
+      .delete()
+      .eq("id", categoryId)
+
+    fetchData()
+  }
+
+  async function createProduct() {
+
+    if (!newProductName.trim()) return
+
+    try {
+
+      const { data, error } = await supabase
+        .from("products")
+        .insert([{
+          name: newProductName,
+          category_id: newProductCategory || null,
+          packaging: newProductPackaging || null
+        }])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      const { data: locations } = await supabase
+        .from("locations")
+        .select("id")
+
+      const stocksPayload = (locations || []).map(loc => ({
+        product_id: data.id,
+        location_id: loc.id,
+        quantity: 0
+      }))
+
+      await supabase.from("stocks").insert(stocksPayload)
+
+      setNewProductName("")
+      setNewProductCategory("")
+      setNewProductPackaging("")
+
+      fetchData()
+
+    } catch (err) {
+
+      console.error("Erreur createProduct:", err)
+
+    }
+  }
 
   async function updatePackaging(productId, value) {
+
     await supabase
       .from("products")
-      .update({ packaging: value || null })
+      .update({
+        packaging: value || null
+      })
       .eq("id", productId)
   }
 
   async function toggleVisibility(productId, locationId, isVisible) {
 
     if (isVisible) {
+
       await supabase
         .from("product_location_settings")
         .insert([{
           product_id: productId,
           location_id: locationId
         }])
+
     } else {
+
       await supabase
         .from("product_location_settings")
         .delete()
@@ -149,18 +208,28 @@ export default function ProductsTab() {
   }
 
   async function updateCategory(productId, categoryId) {
+
     await supabase
       .from("products")
-      .update({ category_id: categoryId || null })
+      .update({
+        category_id: categoryId || null
+      })
       .eq("id", productId)
   }
 
   async function deleteProduct(productId) {
 
-    const confirmDelete = window.confirm("Supprimer ce produit ?")
+    const confirmDelete = window.confirm(
+      "Supprimer ce produit ?"
+    )
+
     if (!confirmDelete) return
 
-    await supabase.from("products").delete().eq("id", productId)
+    await supabase
+      .from("products")
+      .delete()
+      .eq("id", productId)
+
     fetchData()
   }
 
@@ -174,7 +243,10 @@ export default function ProductsTab() {
       categories.find(c => c.id === product.category_id)?.name
       || "Sans catégorie"
 
-    if (!acc[categoryName]) acc[categoryName] = []
+    if (!acc[categoryName]) {
+      acc[categoryName] = []
+    }
+
     acc[categoryName].push(product)
 
     return acc
@@ -184,36 +256,117 @@ export default function ProductsTab() {
   return (
     <div className="space-y-12">
 
-      {/* CREATION CATEGORIE */}
-      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Ajouter une catégorie
-        </h2>
+      {/* CATEGORIES */}
+      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-6">
 
-        <div className="flex gap-3 flex-wrap">
-          <input
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            placeholder="Nom catégorie"
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
+        <div className="space-y-4">
 
-          <button
-            onClick={createCategory}
-            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            Ajouter
-          </button>
+          <h2 className="text-lg font-semibold text-slate-900">
+            Catégories
+          </h2>
+
+          <div className="flex gap-3 flex-wrap">
+
+            <input
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="Nom catégorie"
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+
+            <button
+              onClick={createCategory}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              Ajouter
+            </button>
+
+          </div>
+
         </div>
+
+        <div className="space-y-3">
+
+          {categories.map(category => {
+
+            const isEditing = editingCategoryId === category.id
+
+            return (
+              <div
+                key={category.id}
+                className="flex items-center justify-between gap-4 border border-slate-200 rounded-xl p-3"
+              >
+
+                <div className="flex-1">
+
+                  {isEditing ? (
+
+                    <input
+                      value={editingCategoryName}
+                      onChange={(e) =>
+                        setEditingCategoryName(e.target.value)
+                      }
+                      className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full"
+                    />
+
+                  ) : (
+
+                    <div className="font-medium text-slate-800">
+                      {category.name}
+                    </div>
+
+                  )}
+
+                </div>
+
+                <div className="flex gap-2">
+
+                  {isEditing ? (
+
+                    <button
+                      onClick={saveCategoryEdit}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs"
+                    >
+                      OK
+                    </button>
+
+                  ) : (
+
+                    <button
+                      onClick={() => startEditCategory(category)}
+                      className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs"
+                    >
+                      Modifier
+                    </button>
+
+                  )}
+
+                  <button
+                    onClick={() => deleteCategory(category.id)}
+                    className="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-lg text-xs"
+                  >
+                    Supprimer
+                  </button>
+
+                </div>
+
+              </div>
+            )
+          })}
+
+        </div>
+
       </div>
 
       {/* CREATION PRODUIT */}
       <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-5">
+
         <h2 className="text-lg font-semibold text-slate-900">
           Ajouter un produit
         </h2>
 
         <div className="flex gap-3 flex-wrap">
+
           <input
             value={newProductName}
             onChange={(e) => setNewProductName(e.target.value)}
@@ -234,11 +387,13 @@ export default function ProductsTab() {
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
           >
             <option value="">Sans catégorie</option>
+
             {categories.map(cat => (
               <option key={cat.id} value={cat.id}>
                 {cat.name}
               </option>
             ))}
+
           </select>
 
           <button
@@ -247,11 +402,14 @@ export default function ProductsTab() {
           >
             Ajouter
           </button>
+
         </div>
+
       </div>
 
       {/* RECHERCHE */}
       <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4">
+
         <h2 className="text-lg font-semibold text-slate-900">
           Rechercher un produit
         </h2>
@@ -262,12 +420,16 @@ export default function ProductsTab() {
           placeholder="Rechercher..."
           className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64"
         />
+
       </div>
 
       {/* TABLEAUX PAR CATEGORIE */}
       {Object.entries(groupedProducts).map(([category, items]) => (
 
-        <div key={`category-${category}`} className="space-y-4">
+        <div
+          key={`category-${category}`}
+          className="space-y-4"
+        >
 
           <h2 className="text-base font-semibold text-slate-800">
             {category}
@@ -278,18 +440,31 @@ export default function ProductsTab() {
             <table className="min-w-full text-sm">
 
               <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+
                 <tr>
-                  <th className="px-4 py-3 text-left">Produit</th>
-                  <th className="px-4 py-3 text-center">Catégorie</th>
+                  <th className="px-4 py-3 text-left">
+                    Produit
+                  </th>
+
+                  <th className="px-4 py-3 text-center">
+                    Catégorie
+                  </th>
 
                   {poles.map(p => (
-                    <th key={p.id} className="px-4 py-3 text-center">
+                    <th
+                      key={p.id}
+                      className="px-4 py-3 text-center"
+                    >
                       {p.name}
                     </th>
                   ))}
 
-                  <th className="px-4 py-3 text-center">Supprimer</th>
+                  <th className="px-4 py-3 text-center">
+                    Supprimer
+                  </th>
+
                 </tr>
+
               </thead>
 
               <tbody className="divide-y divide-slate-100">
@@ -319,6 +494,7 @@ export default function ProductsTab() {
                     </td>
 
                     <td className="px-4 py-3 text-center">
+
                       <select
                         value={product.category_id || ""}
                         onChange={(e) =>
@@ -326,17 +502,31 @@ export default function ProductsTab() {
                         }
                         className="border border-slate-300 rounded-lg px-2 py-1 text-sm"
                       >
-                        <option value="">Sans catégorie</option>
+
+                        <option value="">
+                          Sans catégorie
+                        </option>
+
                         {categories.map(cat => (
-                          <option key={cat.id} value={cat.id}>
+                          <option
+                            key={cat.id}
+                            value={cat.id}
+                          >
                             {cat.name}
                           </option>
                         ))}
+
                       </select>
+
                     </td>
 
                     {poles.map(pole => (
-                      <td key={pole.id} className="px-4 py-3 text-center">
+
+                      <td
+                        key={pole.id}
+                        className="px-4 py-3 text-center"
+                      >
+
                         <input
                           type="checkbox"
                           checked={product.visibility?.[pole.id] || false}
@@ -349,16 +539,20 @@ export default function ProductsTab() {
                           }
                           className="accent-slate-900"
                         />
+
                       </td>
+
                     ))}
 
                     <td className="px-4 py-3 text-center">
+
                       <button
                         onClick={() => deleteProduct(product.id)}
                         className="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
                       >
                         Supprimer
                       </button>
+
                     </td>
 
                   </tr>

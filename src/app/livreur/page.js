@@ -22,6 +22,23 @@ export default function LivreurPage() {
   const [locationId, setLocationId] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0)
+
+async function fetchUnreadMessagesCount(profileLocationId) {
+  const { count, error } = await supabase
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .or(`receiver_role.eq.livreur,location_id.eq.${profileLocationId}`)
+    .eq("read", false)
+
+  if (error) {
+    console.error("Erreur messages non lus :", error)
+    return
+  }
+
+  setUnreadMessagesCount(count || 0)
+}
+
   useEffect(() => {
     async function fetchProfile() {
       const {
@@ -41,6 +58,7 @@ export default function LivreurPage() {
 
       if (profile) {
         setLocationId(profile.location_id)
+        fetchUnreadMessagesCount(profile.location_id)
       }
 
       setLoading(false)
@@ -68,9 +86,10 @@ export default function LivreurPage() {
       <div className="max-w-7xl mx-auto px-8 py-10 space-y-10">
         {/* NAVIGATION */}
         <TabsNavigation
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-        />
+  activeTab={activeTab}
+  setActiveTab={setActiveTab}
+  unreadMessagesCount={unreadMessagesCount}
+/>
 
         {/* CONTENU */}
         <div className="space-y-8">

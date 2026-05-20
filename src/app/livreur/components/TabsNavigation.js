@@ -1,4 +1,9 @@
-export default function TabsNavigation({ activeTab, setActiveTab }) {
+export default function TabsNavigation({
+  activeTab,
+  setActiveTab,
+  unreadMessagesCount = 0,
+}) {  
+  
   const tabs = [
     { id: "orders", label: "Commandes / Transferts" },
     { id: "entries", label: "Entrées" },
@@ -26,7 +31,15 @@ export default function TabsNavigation({ activeTab, setActiveTab }) {
                 }
               `}
             >
-              {tab.label}
+              <span className="inline-flex items-center gap-2">
+  {tab.label}
+
+  {tab.id === "messages" && unreadMessagesCount > 0 && (
+    <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-600 text-white text-xs flex items-center justify-center">
+      {unreadMessagesCount}
+    </span>
+  )}
+</span>
 
               {isActive && (
                 <span className="absolute left-0 -bottom-[1px] w-full h-[2px] bg-blue-800 rounded-full" />
