@@ -85,6 +85,22 @@ export default function MessagingTab() {
     fetchConversations()
   }, [])
 
+  async function markMessagesAsRead(locationId) {
+  const { error } = await supabase
+    .from("messages")
+    .update({ read: true })
+    .eq("location_id", locationId)
+    .eq("receiver_role", "livreur")
+    .eq("read", false)
+
+  if (error) {
+    console.error("Erreur lecture messages :", error)
+    return
+  }
+
+  window.dispatchEvent(new Event("messages-updated"))
+}
+
   async function fetchMessages(locationId) {
     const { data, error } = await supabase
       .from("messages")
@@ -99,14 +115,8 @@ export default function MessagingTab() {
 
     setMessages(data || [])
 
-    await supabase
-      .from("messages")
-      .update({ read: true })
-      .eq("location_id", locationId)
-      .eq("receiver_role", "livreur")
-      .eq("read", false)
-
-    fetchConversations()
+    await markMessagesAsRead(locationId)
+    await fetchConversations()
   }
 
   useEffect(() => {
@@ -128,9 +138,12 @@ export default function MessagingTab() {
               if (prev.find((m) => m.id === newMsg.id)) return prev
               return [...prev, newMsg]
             })
+
+            markMessagesAsRead(newMsg.location_id)
           }
 
           fetchConversations()
+          window.dispatchEvent(new Event("messages-updated"))
         }
       )
       .subscribe()
@@ -231,7 +244,14 @@ export default function MessagingTab() {
                   </div>
 
                   <div className="text-xs opacity-70 mt-1">
-                    {new Date(msg.created_at).toLocaleString("fr-FR")}
+                    {new Date(msg.created_at).toLocaleString("fr-FR", {
+  timeZone: "Europe/Paris",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit"
+})}
                   </div>
                 </div>
               </div>

@@ -195,7 +195,14 @@ export default function MessagingTab({ locationId }) {
                   </div>
 
                   <div className="text-xs opacity-70 mt-1">
-                    {new Date(msg.created_at).toLocaleString("fr-FR")}
+                    {new Date(msg.created_at).toLocaleString("fr-FR", {
+  timeZone: "Europe/Paris",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit"
+})}
                   </div>
                 </div>
               </div>
