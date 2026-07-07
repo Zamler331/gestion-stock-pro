@@ -70,18 +70,20 @@ export async function getGlobalStockView() {
 
     const productInfoMap = {}
 
-    productsData?.forEach((p) => {
-      productInfoMap[p.id] = p
+    productsData?.forEach((product) => {
+      productInfoMap[product.id] = product
     })
 
     const { data: batches, error: batchesError } = await supabase
       .from("stock_batches")
       .select(`
+        id,
         quantity,
         location_id,
         product_id,
         expiration_date,
-        source_movement_id
+        source_movement_id,
+        created_at
       `)
       .in("product_id", visibleProductIds)
 
@@ -90,43 +92,15 @@ export async function getGlobalStockView() {
       return { products: [], locations: locations || [] }
     }
 
-    const sourceMovementIds = [
-      ...new Set(
-        (batches || [])
-          .map((b) => b.source_movement_id)
-          .filter(Boolean)
-      ),
-    ]
-
-    let movementMap = {}
-
-    if (sourceMovementIds.length > 0) {
-      const { data: movements, error: movementsError } = await supabase
-        .from("movements")
-        .select("id, effective_date")
-        .in("id", sourceMovementIds)
-
-      if (movementsError) {
-        console.error("Erreur movements:", movementsError)
-        return { products: [], locations: locations || [] }
-      }
-
-      movements?.forEach((m) => {
-        movementMap[m.id] = m.effective_date
-      })
-    }
-
     const now = new Date()
 
-    const validBatches = (batches || []).filter((b) => {
+    const validBatches = (batches || []).filter((batch) => {
+      const quantity = Number(batch.quantity || 0)
+
       const notExpired =
-        !b.expiration_date || new Date(b.expiration_date) > now
+        !batch.expiration_date || new Date(batch.expiration_date) > now
 
-      const effectiveDate = movementMap[b.source_movement_id]
-      const isActive =
-        !effectiveDate || new Date(effectiveDate) <= now
-
-      return notExpired && isActive && Number(b.quantity || 0) > 0
+      return quantity > 0 && notExpired
     })
 
     const productsMap = {}
@@ -143,6 +117,14 @@ export async function getGlobalStockView() {
       }
     })
 
+    locations?.forEach((location) => {
+      Object.values(productsMap).forEach((product) => {
+        product.locations[location.id] = {
+          quantity: 0,
+        }
+      })
+    })
+
     validBatches.forEach((batch) => {
       const product = productsMap[batch.product_id]
 
@@ -157,26 +139,16 @@ export async function getGlobalStockView() {
       product.locations[batch.location_id].quantity += Number(batch.quantity || 0)
     })
 
-    locations?.forEach((loc) => {
-      Object.values(productsMap).forEach((product) => {
-        if (!product.locations[loc.id]) {
-          product.locations[loc.id] = {
-            quantity: 0,
-          }
-        }
-      })
-    })
-
     const products = Object.values(productsMap)
 
     const db = await getDB()
 
     const tx1 = db.transaction("stocks", "readwrite")
-    products.forEach((p) => tx1.store.put(p))
+    products.forEach((product) => tx1.store.put(product))
     await tx1.done
 
     const tx2 = db.transaction("locations", "readwrite")
-    locations?.forEach((l) => tx2.store.put(l))
+    locations?.forEach((location) => tx2.store.put(location))
     await tx2.done
 
     return {
@@ -233,44 +205,19 @@ export async function adjustStockAtLocation({
 
   if (batchesError) throw new Error(batchesError.message)
 
-  const sourceMovementIds = [
-    ...new Set(
-      (batches || [])
-        .map((b) => b.source_movement_id)
-        .filter(Boolean)
-    ),
-  ]
-
-  let movementMap = {}
-
-  if (sourceMovementIds.length > 0) {
-    const { data: movements, error: movementsError } = await supabase
-      .from("movements")
-      .select("id, effective_date")
-      .in("id", sourceMovementIds)
-
-    if (movementsError) throw new Error(movementsError.message)
-
-    movements?.forEach((m) => {
-      movementMap[m.id] = m.effective_date
-    })
-  }
-
   const now = new Date()
 
-  const validBatches = (batches || []).filter((b) => {
+  const validBatches = (batches || []).filter((batch) => {
+    const quantity = Number(batch.quantity || 0)
+
     const notExpired =
-      !b.expiration_date || new Date(b.expiration_date) > now
+      !batch.expiration_date || new Date(batch.expiration_date) > now
 
-    const effectiveDate = movementMap[b.source_movement_id]
-    const isActive =
-      !effectiveDate || new Date(effectiveDate) <= now
-
-    return notExpired && isActive && Number(b.quantity || 0) > 0
+    return quantity > 0 && notExpired
   })
 
   const currentQty = validBatches.reduce(
-    (sum, b) => sum + Number(b.quantity || 0),
+    (sum, batch) => sum + Number(batch.quantity || 0),
     0
   )
 
@@ -281,14 +228,16 @@ export async function adjustStockAtLocation({
   if (diff < 0) {
     const qtyToRemove = Math.abs(diff)
 
-    const { error: movementError } = await supabase.from("movements").insert({
-      product_id: productId,
-      quantity: qtyToRemove,
-      type: "sortie",
-      source_location_id: locationId,
-      user_id: user.id,
-      annotation: "Correction manuelle stock",
-    })
+    const { error: movementError } = await supabase
+      .from("movements")
+      .insert({
+        product_id: productId,
+        quantity: qtyToRemove,
+        type: "sortie",
+        source_location_id: locationId,
+        user_id: user.id,
+        annotation: "Correction manuelle stock",
+      })
 
     if (movementError) throw new Error(movementError.message)
 
