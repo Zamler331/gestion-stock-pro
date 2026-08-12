@@ -1,5 +1,12 @@
 import { db } from "./localDB"
 import { supabase } from "@/lib/supabase"
+import {
+  createOrderAtomic,
+  deliverOrderAtomic,
+  recordStockEntry,
+  recordStockExit,
+  transferStock,
+} from "@/lib/services/atomicStockService"
 
 let isSyncing = false
 const MAX_RETRY = 3
@@ -108,309 +115,63 @@ await db.pendingActions
 /* ========================= */
 
 async function processAction(action) {
-
-  const type = action.type
-  const payload = action.payload
-  const actionId = action.actionId
-
-  if (!actionId) {
-    throw new Error("actionId manquant — action invalide")
-  }
+  const { type, payload, actionId } = action
+  if (!actionId) throw new Error("actionId manquant — action invalide")
 
   switch (type) {
-
-    /* ========================= */
-    /* VALIDATION COMMANDE */
-    /* ========================= */
-
+    case "supplier_entry":
+      return recordStockEntry({
+        actionId,
+        productId: payload.product_id,
+        locationId: payload.location_id,
+        quantity: payload.quantity,
+        expirationDate: payload.expiration_date,
+        annotation: payload.annotation,
+      })
+    case "transfer":
+      return transferStock({
+        actionId,
+        productId: payload.product_id,
+        sourceLocationId: payload.source_location_id,
+        destinationLocationId: payload.destination_location_id,
+        quantity: payload.quantity,
+        annotation: payload.annotation,
+      })
+    case "pole_exit":
+      return recordStockExit({
+        actionId,
+        productId: payload.product_id,
+        locationId: payload.location_id,
+        quantity: payload.quantity,
+        annotation: payload.annotation,
+      })
+    case "create_order":
+      return createOrderAtomic({
+        actionId,
+        destinationLocationId: payload.destination_location_id,
+        items: [{
+          product_id: payload.product_id,
+          quantity_ordered: payload.quantity,
+        }],
+      })
     case "validate_order": {
-
-  const { order_id, source_location_id } = payload
-
-  // 🔐 Vérifier si mouvement déjà créé
-  const { data: existingMovement } = await supabase
-    .from("movements")
-    .select("id")
-    .eq("action_id", actionId ?? "")
-    .maybeSingle()
-
-  if (existingMovement) {
-    console.warn("Action déjà traitée — skip")
-    return
-  }
-
-  const { data: order } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", order_id)
-    .single()
-
-  if (!order) return
-
-  if (order.status === "Livré") {
-    console.warn("Commande déjà livrée — skip")
-    return
-  }
-
-  const qty = parseInt(order.quantity)
-
-  const { data: reserveStock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", order.product_id)
-    .eq("location_id", source_location_id)
-    .single()
-
-  if (!reserveStock || reserveStock.quantity < qty)
-    throw new Error("Stock insuffisant")
-
-  // Décrémenter réserve
-  await supabase
-    .from("stocks")
-    .update({ quantity: reserveStock.quantity - qty })
-    .eq("id", reserveStock.id)
-
-  const { data: poleStock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", order.product_id)
-    .eq("location_id", order.destination_location_id)
-    .single()
-
-  // Incrémenter pôle
-  await supabase
-    .from("stocks")
-    .update({ quantity: poleStock.quantity + qty })
-    .eq("id", poleStock.id)
-
-  // 🔐 INSERT sécurisé avec action_id
-  await supabase.from("movements").insert([{
-    product_id: order.product_id,
-    type: "livraison",
-    quantity: qty,
-    source_location_id,
-    destination_location_id: order.destination_location_id,
-    action_id: actionId
-  }])
-
-  await supabase
-    .from("orders")
-    .update({
-      status: "Livré",
-      source_location_id
-    })
-    .eq("id", order_id)
-
-  break
-}
-    /* ========================= */
-    /* ENTRÉE FOURNISSEUR */
-    /* ========================= */
-
-   case "supplier_entry": {
-
-  const { product_id, location_id, quantity, annotation } = payload
-
-  // 🔐 Vérifier si déjà traité
-  const { data: existingMovement } = await supabase
-    .from("movements")
-    .select("id")
-    .eq("action_id", actionId ?? "")
-    .maybeSingle()
-
-  if (existingMovement) {
-    console.warn("supplier_entry déjà traité — skip")
-    return
-  }
-
-  const { data: stock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", product_id)
-    .eq("location_id", location_id)
-    .single()
-
-  if (!stock)
-    throw new Error("Stock introuvable")
-
-  // Incrémenter stock
-  await supabase
-    .from("stocks")
-    .update({ quantity: stock.quantity + quantity })
-    .eq("id", stock.id)
-
-  // 🔐 Insert sécurisé
-  await supabase.from("movements").insert([{
-    product_id,
-    type: "entry",
-    quantity,
-    destination_location_id: location_id,
-    annotation,
-    action_id: actionId
-  }])
-
-  break
-}
-
-    /* ========================= */
-    /* TRANSFERT */
-    /* ========================= */
-
-    case "transfer": {
-
-  const {
-    product_id,
-    quantity,
-    source_location_id,
-    destination_location_id,
-    annotation
-  } = payload
-
-  // 🔐 Vérifier si déjà traité
-  const { data: existingMovement } = await supabase
-    .from("movements")
-    .select("id")
-    .eq("action_id", actionId ?? "")
-    .maybeSingle()
-
-  if (existingMovement) {
-    console.warn("transfer déjà traité — skip")
-    return
-  }
-
-  const { data: sourceStock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", product_id)
-    .eq("location_id", source_location_id)
-    .single()
-
-  if (!sourceStock || sourceStock.quantity < quantity)
-    throw new Error("Stock insuffisant")
-
-  // Décrémenter source
-  await supabase
-    .from("stocks")
-    .update({ quantity: sourceStock.quantity - quantity })
-    .eq("id", sourceStock.id)
-
-  const { data: destStock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", product_id)
-    .eq("location_id", destination_location_id)
-    .single()
-
-  if (!destStock)
-    throw new Error("Stock destination introuvable")
-
-  // Incrémenter destination
-  await supabase
-    .from("stocks")
-    .update({ quantity: destStock.quantity + quantity })
-    .eq("id", destStock.id)
-
-  // 🔐 Insert sécurisé
-  await supabase.from("movements").insert([{
-    product_id,
-    type: "transfert",
-    quantity,
-    source_location_id,
-    destination_location_id,
-    annotation,
-    action_id: actionId
-  }])
-
-  break
-}
-
-    /* ========================= */
-    /* SORTIE PÔLE */
-    /* ========================= */
-
-    case "pole_exit": {
-
-  const {
-    product_id,
-    location_id,
-    quantity,
-    annotation
-  } = payload
-
-  // 🔐 Vérifier si déjà traité
-  const { data: existingMovement } = await supabase
-    .from("movements")
-    .select("id")
-    .eq("action_id", actionId ?? "")
-    .maybeSingle()
-
-  if (existingMovement) {
-    console.warn("pole_exit déjà traité — skip")
-    return
-  }
-
-  const { data: stock } = await supabase
-    .from("stocks")
-    .select("*")
-    .eq("product_id", product_id)
-    .eq("location_id", location_id)
-    .single()
-
-  if (!stock || stock.quantity < quantity)
-    throw new Error("Stock insuffisant")
-
-  // Décrémenter stock
-  await supabase
-    .from("stocks")
-    .update({ quantity: stock.quantity - quantity })
-    .eq("id", stock.id)
-
-  // 🔐 Insert sécurisé
-  await supabase.from("movements").insert([{
-    product_id,
-    type: "sortie",
-    quantity,
-    source_location_id: location_id,
-    destination_location_id: null,
-    annotation,
-    action_id: actionId
-  }])
-
-  break
-}
-
-    /* ========================= */
-    /* CREATION COMMANDE */
-    /* ========================= */
-
-case "create_order": {
-  const { product_id, quantity, destination_location_id, annotation } = payload
-
-  // Vérification idempotence
-  const { data: existing } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("action_id", actionId ?? "")
-    .maybeSingle()
-
-  if (existing) break
-
-  const { error } = await supabase.from("orders").insert([{
-    product_id,
-    quantity,
-    destination_location_id,
-    source_location_id: null,
-    status: "En attente",
-    annotation,
-    action_id: actionId
-  }])
-
-  if (error) throw error
-
-  break
-}
-
+      const { data: order, error } = await supabase
+        .from("orders")
+        .select("id, order_items(id, quantity_ordered)")
+        .eq("id", payload.order_id)
+        .single()
+      if (error) throw error
+      return deliverOrderAtomic({
+        actionId,
+        orderId: order.id,
+        deliveries: order.order_items.map((item) => ({
+          item_id: item.id,
+          reserve_id: payload.source_location_id,
+          quantity: item.quantity_ordered,
+        })),
+      })
+    }
     default:
-      console.warn("Type non géré :", type)
+      throw new Error(`Type non géré : ${type}`)
   }
 }

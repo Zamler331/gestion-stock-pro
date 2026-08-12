@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import {
+  reconcileStockBatches,
+  recordStockEntry,
+} from "@/lib/services/atomicStockService"
 
 export default function DlcTab({
   locationId,
@@ -310,41 +314,15 @@ export default function DlcTab({
         throw new Error("Choisissez une DLC")
       }
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError) throw userError
-      if (!user) throw new Error("Utilisateur non connecté")
-
       const quantity = Number(newBatch.quantity)
-
-      const { data: movement, error: movementError } = await supabase
-        .from("movements")
-        .insert({
-          product_id: newBatch.product_id,
-          quantity,
-          type: "correction",
-          destination_location_id: targetLocationId,
-          user_id: user.id,
-        })
-        .select()
-        .single()
-
-      if (movementError) throw movementError
-
-      const { error: insertBatchError } = await supabase
-        .from("stock_batches")
-        .insert({
-          product_id: newBatch.product_id,
-          location_id: targetLocationId,
-          quantity,
-          expiration_date: newBatch.expiration_date,
-          source_movement_id: movement.id,
-        })
-
-      if (insertBatchError) throw insertBatchError
+      await recordStockEntry({
+        productId: newBatch.product_id,
+        locationId: targetLocationId,
+        quantity,
+        expirationDate: newBatch.expiration_date,
+        annotation: "Ajout manuel lot DLC",
+        movementType: "correction",
+      })
 
       setNewBatch({
         product_id: "",
@@ -371,14 +349,7 @@ export default function DlcTab({
         throw new Error("Sélectionnez un pôle")
       }
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError) throw userError
-      if (!user) throw new Error("Utilisateur non connecté")
-
+      const batchTargets = []
       for (const batch of batches) {
         const oldQty = Number(batch.quantity || 0)
         const newQty = Number(batchDraft[batch.id] ?? oldQty)
@@ -391,101 +362,33 @@ export default function DlcTab({
           )
         }
 
-        const diff = newQty - oldQty
-
-        if (diff < 0) {
-          const qtyRemoved = Math.abs(diff)
-
-          const { error: movementError } = await supabase
-            .from("movements")
-            .insert({
-              product_id: batch.product_id,
-              quantity: qtyRemoved,
-              type: "sortie",
-              source_location_id: targetLocationId,
-              user_id: user.id,
-            })
-
-          if (movementError) throw movementError
-
-          if (newQty === 0) {
-            const { error: deleteError } = await supabase
-              .from("stock_batches")
-              .delete()
-              .eq("id", batch.id)
-
-            if (deleteError) throw deleteError
-          } else {
-            const { error: updateError } = await supabase
-              .from("stock_batches")
-              .update({ quantity: newQty })
-              .eq("id", batch.id)
-
-            if (updateError) throw updateError
-          }
-        }
-
-        if (diff > 0) {
-          const { data: movement, error: movementError } = await supabase
-            .from("movements")
-            .insert({
-              product_id: batch.product_id,
-              quantity: diff,
-              type: "correction",
-              source_location_id: targetLocationId,
-              user_id: user.id,
-            })
-            .select()
-            .single()
-
-          if (movementError) throw movementError
-
-          const { error: updateError } = await supabase
-            .from("stock_batches")
-            .update({
-              quantity: newQty,
-              source_movement_id: movement.id,
-            })
-            .eq("id", batch.id)
-
-          if (updateError) throw updateError
-        }
+        batchTargets.push({ batch_id: batch.id, target_quantity: newQty })
       }
 
+      let newBatchPayload = null
       if (
         canAddBatch &&
         newBatch.product_id &&
         Number(newBatch.quantity) > 0 &&
         newBatch.expiration_date
       ) {
-        const quantity = Number(newBatch.quantity)
-
-        const { data: movement, error: movementError } = await supabase
-          .from("movements")
-          .insert({
-            product_id: newBatch.product_id,
-            quantity,
-            type: "correction",
-            destination_location_id: targetLocationId,
-            user_id: user.id,
-          })
-          .select()
-          .single()
-
-        if (movementError) throw movementError
-
-        const { error: insertBatchError } = await supabase
-          .from("stock_batches")
-          .insert({
-            product_id: newBatch.product_id,
-            location_id: targetLocationId,
-            quantity,
-            expiration_date: newBatch.expiration_date,
-            source_movement_id: movement.id,
-          })
-
-        if (insertBatchError) throw insertBatchError
+        newBatchPayload = {
+          product_id: newBatch.product_id,
+          quantity: Number(newBatch.quantity),
+          expiration_date: newBatch.expiration_date,
+        }
       }
+
+      if (batchTargets.length === 0 && !newBatchPayload) {
+        setMessage("Aucune modification à valider")
+        return
+      }
+
+      await reconcileStockBatches({
+        locationId: targetLocationId,
+        batchTargets,
+        newBatch: newBatchPayload,
+      })
 
       setNewBatch({
         product_id: "",

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { getDB } from "@/lib/offline/offlineDB"
+import { adjustStockLevel } from "@/lib/services/atomicStockService"
 
 export async function getGlobalStockView() {
   try {
@@ -74,34 +75,15 @@ export async function getGlobalStockView() {
       productInfoMap[product.id] = product
     })
 
-    const { data: batches, error: batchesError } = await supabase
-      .from("stock_batches")
-      .select(`
-        id,
-        quantity,
-        location_id,
-        product_id,
-        expiration_date,
-        source_movement_id,
-        created_at
-      `)
+    const { data: levels, error: levelsError } = await supabase
+      .from("current_stock_levels")
+      .select("product_id, location_id, quantity")
       .in("product_id", visibleProductIds)
 
-    if (batchesError) {
-      console.error("Erreur batches:", batchesError)
+    if (levelsError) {
+      console.error("Erreur niveaux de stock:", levelsError)
       return { products: [], locations: locations || [] }
     }
-
-    const now = new Date()
-
-    const validBatches = (batches || []).filter((batch) => {
-      const quantity = Number(batch.quantity || 0)
-
-      const notExpired =
-        !batch.expiration_date || new Date(batch.expiration_date) > now
-
-      return quantity > 0 && notExpired
-    })
 
     const productsMap = {}
 
@@ -125,18 +107,18 @@ export async function getGlobalStockView() {
       })
     })
 
-    validBatches.forEach((batch) => {
-      const product = productsMap[batch.product_id]
+    ;(levels || []).forEach((level) => {
+      const product = productsMap[level.product_id]
 
       if (!product) return
 
-      if (!product.locations[batch.location_id]) {
-        product.locations[batch.location_id] = {
+      if (!product.locations[level.location_id]) {
+        product.locations[level.location_id] = {
           quantity: 0,
         }
       }
 
-      product.locations[batch.location_id].quantity += Number(batch.quantity || 0)
+      product.locations[level.location_id].quantity = Number(level.quantity || 0)
     })
 
     const products = Object.values(productsMap)
@@ -186,120 +168,11 @@ export async function adjustStockAtLocation({
     throw new Error("Quantité invalide")
   }
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError) throw userError
-  if (!user) throw new Error("Utilisateur non connecté")
-
-  const targetQty = Number(newQuantity)
-
-  const { data: batches, error: batchesError } = await supabase
-    .from("stock_batches")
-    .select("*")
-    .eq("product_id", productId)
-    .eq("location_id", locationId)
-    .order("created_at", { ascending: true })
-
-  if (batchesError) throw new Error(batchesError.message)
-
-  const now = new Date()
-
-  const validBatches = (batches || []).filter((batch) => {
-    const quantity = Number(batch.quantity || 0)
-
-    const notExpired =
-      !batch.expiration_date || new Date(batch.expiration_date) > now
-
-    return quantity > 0 && notExpired
+  await adjustStockLevel({
+    productId,
+    locationId,
+    targetQuantity: Number(newQuantity),
   })
-
-  const currentQty = validBatches.reduce(
-    (sum, batch) => sum + Number(batch.quantity || 0),
-    0
-  )
-
-  const diff = targetQty - currentQty
-
-  if (diff === 0) return true
-
-  if (diff < 0) {
-    const qtyToRemove = Math.abs(diff)
-
-    const { error: movementError } = await supabase
-      .from("movements")
-      .insert({
-        product_id: productId,
-        quantity: qtyToRemove,
-        type: "sortie",
-        source_location_id: locationId,
-        user_id: user.id,
-        annotation: "Correction manuelle stock",
-      })
-
-    if (movementError) throw new Error(movementError.message)
-
-    let remaining = qtyToRemove
-
-    for (const batch of validBatches) {
-      if (remaining <= 0) break
-
-      const batchQty = Number(batch.quantity || 0)
-
-      if (batchQty <= remaining) {
-        const { error: deleteError } = await supabase
-          .from("stock_batches")
-          .delete()
-          .eq("id", batch.id)
-
-        if (deleteError) throw new Error(deleteError.message)
-
-        remaining -= batchQty
-      } else {
-        const { error: updateError } = await supabase
-          .from("stock_batches")
-          .update({
-            quantity: batchQty - remaining,
-          })
-          .eq("id", batch.id)
-
-        if (updateError) throw new Error(updateError.message)
-
-        remaining = 0
-      }
-    }
-  }
-
-  if (diff > 0) {
-    const { data: movement, error: movementError } = await supabase
-      .from("movements")
-      .insert({
-        product_id: productId,
-        quantity: diff,
-        type: "correction",
-        destination_location_id: locationId,
-        user_id: user.id,
-        annotation: "Correction manuelle stock",
-      })
-      .select()
-      .single()
-
-    if (movementError) throw new Error(movementError.message)
-    if (!movement) throw new Error("Impossible de créer le mouvement")
-
-    const { error: batchInsertError } = await supabase
-      .from("stock_batches")
-      .insert({
-        product_id: productId,
-        location_id: locationId,
-        quantity: diff,
-        source_movement_id: movement.id,
-      })
-
-    if (batchInsertError) throw new Error(batchInsertError.message)
-  }
 
   return true
 }

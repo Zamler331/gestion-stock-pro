@@ -53,7 +53,7 @@ export default function StockTab({ locationId }) {
       /* ========================= */
 
       const { data: visibility, error: visError } = await supabase
-        .from("product_location_visibility")
+        .from("product_location_settings")
         .select("product_id")
         .eq("location_id", locationId)
 
@@ -75,16 +75,14 @@ export default function StockTab({ locationId }) {
       /* ========================= */
 
       const { data, error } = await supabase
-        .from("stocks")
+        .from("current_stock_levels")
         .select(`
           product_id,
           quantity,
           location_id,
-          products:product_id (
-            name,
-            packaging,
-            categories(name)
-          )
+          product_name,
+          packaging,
+          category_name
         `)
         .in("location_id", [locationId, ...reserveIds])
         .in("product_id", visibleProductIds)
@@ -102,13 +100,11 @@ export default function StockTab({ locationId }) {
       const merged = {}
 
       data.forEach((item) => {
-        if (!item.products) return
-
         if (!merged[item.product_id]) {
           merged[item.product_id] = {
-            name: item.products.name,
-            packaging: item.products.packaging,
-            category: item.products.categories?.name || "Sans catégorie",
+            name: item.product_name,
+            packaging: item.packaging,
+            category: item.category_name || "Sans catégorie",
             poleStock: 0,
             reserveStock: 0,
           }

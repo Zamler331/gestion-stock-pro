@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { recordStockEntry } from "@/lib/services/atomicStockService"
 
 export default function FreeTransferTab({ role = "admin" }) {
   const [products, setProducts] = useState([])
@@ -73,42 +74,15 @@ export default function FreeTransferTab({ role = "admin" }) {
       setLoading(true)
       setMessage("")
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError) throw userError
-      if (!user) throw new Error("Utilisateur non authentifié")
-
       const qty = parseInt(quantity, 10)
-
-      const { data: movement, error: movementError } = await supabase
-        .from("movements")
-        .insert({
-          product_id: selectedProduct.id,
-          quantity: qty,
-          type: "transfert_libre",
-          destination_location_id: selectedLocationId,
-          user_id: user.id,
-          annotation: `Livraison terrain vers ${selectedLocation?.name || "pôle"}`,
-        })
-        .select()
-        .single()
-
-      if (movementError) throw movementError
-
-      const { error: batchError } = await supabase
-        .from("stock_batches")
-        .insert({
-          product_id: selectedProduct.id,
-          location_id: selectedLocationId,
-          quantity: qty,
-          expiration_date: expirationDate || null,
-          source_movement_id: movement.id,
-        })
-
-      if (batchError) throw batchError
+      await recordStockEntry({
+        productId: selectedProduct.id,
+        locationId: selectedLocationId,
+        quantity: qty,
+        expirationDate,
+        annotation: `Livraison terrain vers ${selectedLocation?.name || "pôle"}`,
+        movementType: "transfert_libre",
+      })
 
       setMessage(
         `Livraison enregistrée vers ${selectedLocation?.name || "le pôle"} ✅`

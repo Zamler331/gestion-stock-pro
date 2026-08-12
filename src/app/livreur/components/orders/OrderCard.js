@@ -5,6 +5,10 @@ import { supabase } from "@/lib/supabase"
 import Card from "@/components/ui/Card"
 import Button from "@/components/ui/Button"
 import Badge from "@/components/ui/Badge"
+import {
+  deliverOrderAtomic,
+  setOrderItemPrepared,
+} from "@/lib/services/atomicStockService"
 
 const CATEGORY_ORDER = [
   "Epicerie",
@@ -141,15 +145,11 @@ export default function OrderCard({ order, onValidated }) {
     const nextValue = !checkedItems[itemId]
     const deliveredQty = Number(deliveryQuantities[itemId] || 0)
 
-    const { error: updateError } = await supabase
-      .from("order_items")
-      .update({
-        is_prepared: nextValue,
-        quantity_delivered: deliveredQty,
-      })
-      .eq("id", itemId)
-
-    if (updateError) throw updateError
+    await setOrderItemPrepared({
+      itemId,
+      isPrepared: nextValue,
+      deliveredQuantity: deliveredQty,
+    })
 
     setCheckedItems((prev) => ({
       ...prev,
@@ -170,221 +170,22 @@ export default function OrderCard({ order, onValidated }) {
     }))
   }
 
-  async function getValidReserveBatches(productId, reserveId) {
-    const { data: batches, error: batchesError } = await supabase
-      .from("stock_batches")
-      .select("*")
-      .eq("product_id", productId)
-      .eq("location_id", reserveId)
-      .order("created_at", { ascending: true })
-
-    if (batchesError) throw batchesError
-
-    const sourceMovementIds = [
-      ...new Set(
-        (batches || []).map((b) => b.source_movement_id).filter(Boolean)
-      ),
-    ]
-
-    let movementMap = {}
-
-    if (sourceMovementIds.length > 0) {
-      const { data: movements, error: movementsError } = await supabase
-        .from("movements")
-        .select("id, effective_date")
-        .in("id", sourceMovementIds)
-
-      if (movementsError) throw movementsError
-
-      movements?.forEach((m) => {
-        movementMap[m.id] = m.effective_date
-      })
-    }
-
-    const now = new Date()
-
-    return (batches || []).filter((b) => {
-      const notExpired =
-        !b.expiration_date || new Date(b.expiration_date) > now
-
-      const effectiveDate = movementMap[b.source_movement_id]
-      const isActive =
-        !effectiveDate || new Date(effectiveDate) <= now
-
-      return notExpired && isActive && Number(b.quantity || 0) > 0
-    })
-  }
-
   async function validateOrder() {
     try {
       setIsSubmitting(true)
       setError("")
+      const deliveries = order.order_items.map((item) => {
+        const quantity = Number(deliveryQuantities[item.id] || 0)
+        const reserveId = selectedReserves[item.id] || null
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) throw new Error("Utilisateur non authentifié")
-
-      const partialItems = []
-
-      for (const item of order.order_items) {
-        const deliveredQty = Number(deliveryQuantities[item.id] || 0)
-        const reserveId = selectedReserves[item.id]
-
-        if (deliveredQty > 0 && !reserveId) {
+        if (quantity > 0 && !reserveId) {
           throw new Error(`Sélectionnez une réserve pour ${item.products.name}`)
         }
 
-        if (deliveredQty > 0) {
-          const validBatches = await getValidReserveBatches(
-            item.product_id,
-            reserveId
-          )
+        return { item_id: item.id, reserve_id: reserveId, quantity }
+      })
 
-          const reserveAvailable = validBatches.reduce(
-            (sum, batch) => sum + Number(batch.quantity || 0),
-            0
-          )
-
-          const canDeliverFromReserve = reserveAvailable >= deliveredQty
-
-          if (canDeliverFromReserve) {
-            const { data: movement, error: movementError } = await supabase
-              .from("movements")
-              .insert({
-                product_id: item.product_id,
-                type: "livraison",
-                quantity: deliveredQty,
-                source_location_id: reserveId,
-                destination_location_id: order.destination_location_id,
-                user_id: user.id,
-                annotation: `Livraison commande ${order.id}`,
-              })
-              .select()
-              .single()
-
-            if (movementError) throw movementError
-            if (!movement) throw new Error("Impossible de créer le mouvement")
-
-            let remaining = deliveredQty
-
-            for (const batch of validBatches) {
-              if (remaining <= 0) break
-
-              const batchQty = Number(batch.quantity || 0)
-
-              if (batchQty <= remaining) {
-                const { error: deleteError } = await supabase
-                  .from("stock_batches")
-                  .delete()
-                  .eq("id", batch.id)
-
-                if (deleteError) throw deleteError
-
-                remaining -= batchQty
-              } else {
-                const { error: updateError } = await supabase
-                  .from("stock_batches")
-                  .update({
-                    quantity: batchQty - remaining,
-                  })
-                  .eq("id", batch.id)
-
-                if (updateError) throw updateError
-
-                remaining = 0
-              }
-            }
-
-            const { error: insertBatchError } = await supabase
-              .from("stock_batches")
-              .insert({
-                product_id: item.product_id,
-                location_id: order.destination_location_id,
-                quantity: deliveredQty,
-                source_movement_id: movement.id,
-              })
-
-            if (insertBatchError) throw insertBatchError
-          } else {
-            const { data: movement, error: movementError } = await supabase
-              .from("movements")
-              .insert({
-                product_id: item.product_id,
-                type: "transfert_libre",
-                quantity: deliveredQty,
-                source_location_id: reserveId,
-                destination_location_id: order.destination_location_id,
-                user_id: user.id,
-                annotation: `Livraison terrain auto commande ${order.id}`,
-              })
-              .select()
-              .single()
-
-            if (movementError) throw movementError
-            if (!movement) throw new Error("Impossible de créer le mouvement terrain")
-
-            const { error: batchError } = await supabase
-              .from("stock_batches")
-              .insert({
-                product_id: item.product_id,
-                location_id: order.destination_location_id,
-                quantity: deliveredQty,
-                source_movement_id: movement.id,
-              })
-
-            if (batchError) throw batchError
-          }
-        }
-
-        await supabase
-          .from("order_items")
-          .update({
-            quantity_delivered: deliveredQty,
-            status:
-              deliveredQty === 0
-                ? "cancelled"
-                : deliveredQty < item.quantity_ordered
-                  ? "partial"
-                  : "delivered",
-            is_prepared: true,
-          })
-          .eq("id", item.id)
-
-        if (deliveredQty < item.quantity_ordered) {
-          partialItems.push({
-            name: item.products.name,
-            ordered: item.quantity_ordered,
-            delivered: deliveredQty,
-          })
-        }
-      }
-
-      if (partialItems.length > 0) {
-        const messageContent = `
-Livraison partielle pour la commande ${order.id} :
-
-${partialItems.map((p) => `• ${p.name} : ${p.delivered}/${p.ordered}`).join("\n")}
-`
-
-        await supabase.from("messages").insert({
-          sender_id: user.id,
-          receiver_role: "pole",
-          location_id: order.destination_location_id,
-          content: messageContent,
-          type: "system",
-        })
-      }
-
-      await supabase
-        .from("orders")
-        .update({
-          status: "delivered",
-          validated_at: new Date(),
-          validated_by: user.id,
-        })
-        .eq("id", order.id)
+      await deliverOrderAtomic({ orderId: order.id, deliveries })
 
       if (onValidated) onValidated()
     } catch (err) {

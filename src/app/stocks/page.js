@@ -39,20 +39,13 @@ export default function StocksPage() {
 
   async function fetchStocks() {
     const { data } = await supabase
-      .from("stocks")
+      .from("current_stock_levels")
       .select(`
         quantity,
-        products (
-          name,
-          categories (
-            name,
-            color
-          )
-        ),
-        locations (
-          name,
-          type
-        )
+        product_name,
+        category_name,
+        location_name,
+        location_type
       `)
       .order("quantity", { ascending: true })
 
@@ -81,27 +74,26 @@ export default function StocksPage() {
             {stocks.map((s, index) => (
               <tr key={index} className="border-t">
                 <td className="p-3">
-                  {s.products?.name}
+                  {s.product_name}
                 </td>
 
                 <td className="p-3">
                   <span
                     className="px-2 py-1 rounded text-white text-sm"
                     style={{
-                      backgroundColor:
-                        s.products?.categories?.color || "#64748b"
+                      backgroundColor: "#64748b"
                     }}
                   >
-                    {s.products?.categories?.name}
+                    {s.category_name}
                   </span>
                 </td>
 
                 <td className="p-3">
-                  {s.locations?.name}
+                  {s.location_name}
                 </td>
 
                 <td className="p-3">
-                  {s.locations?.type}
+                  {s.location_type}
                 </td>
 
                 <td
