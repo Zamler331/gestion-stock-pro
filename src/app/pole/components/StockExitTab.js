@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
+import { recordStockExits } from "@/lib/services/atomicStockService"
 
 export default function StockExitTab({ locationId }) {
 
@@ -9,6 +10,7 @@ export default function StockExitTab({ locationId }) {
   const [exitDraft, setExitDraft] = useState({})
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
 
   useEffect(() => {
@@ -24,19 +26,13 @@ export default function StockExitTab({ locationId }) {
     setLoading(true)
 
     const { data, error } = await supabase
-      .from("stocks")
+      .from("current_stock_levels")
       .select(`
-        id,
         quantity,
         product_id,
-        products:product_id (
-          id,
-          name,
-          packaging,
-          categories (
-            name
-          )
-        )
+        product_name,
+        packaging,
+        category_name
       `)
       .eq("location_id", locationId)
 
@@ -47,7 +43,16 @@ export default function StockExitTab({ locationId }) {
       return
     }
 
-    setStocks(data || [])
+    setStocks((data || []).map((row) => ({
+      ...row,
+      id: `${row.product_id}:${locationId}`,
+      products: {
+        id: row.product_id,
+        name: row.product_name,
+        packaging: row.packaging,
+        categories: { name: row.category_name },
+      },
+    })))
     setLoading(false)
   }
 
@@ -107,10 +112,10 @@ export default function StockExitTab({ locationId }) {
   async function handleValidateExit() {
 
     try {
+      if (isSubmitting) return
+      setIsSubmitting(true)
 
       setMessage("")
-
-      const { data: { user } } = await supabase.auth.getUser()
 
       const exits = Object.entries(exitDraft)
         .filter(([_, qty]) => qty > 0)
@@ -120,56 +125,14 @@ export default function StockExitTab({ locationId }) {
         return
       }
 
-      for (const [productId, quantity] of exits) {
-
-        const { data: stock, error: stockError } = await supabase
-          .from("stocks")
-          .select("*")
-          .eq("location_id", locationId)
-          .eq("product_id", productId)
-          .single()
-
-        if (stockError || !stock) continue
-
-        const newQty = stock.quantity - quantity
-
-        if (newQty < 0) {
-          console.warn("Stock insuffisant")
-          continue
-        }
-
-        /* UPDATE STOCK */
-
-        const { error: updateError } = await supabase
-          .from("stocks")
-          .update({
-            quantity: newQty
-          })
-          .eq("id", stock.id)
-
-        if (updateError) {
-          console.error("Erreur update stock:", updateError)
-          continue
-        }
-
-        /* INSERT MOVEMENT */
-
-        const { error: movementError } = await supabase
-          .from("movements")
-          .insert({
-            product_id: productId,
-            quantity: quantity,
-            type: "sortie",
-            source_location_id: locationId,
-            user_id: user.id,
-            annotation: "Sortie pôle"
-          })
-
-        if (movementError) {
-          console.error("Erreur movement:", movementError)
-        }
-
-      }
+      await recordStockExits({
+        locationId,
+        exits: exits.map(([productId, quantity]) => ({
+          product_id: productId,
+          quantity,
+        })),
+        annotation: "Sortie pôle",
+      })
 
       setExitDraft({})
       setMessage("Sorties enregistrées")
@@ -181,6 +144,8 @@ export default function StockExitTab({ locationId }) {
       console.error(err)
       setMessage("Erreur lors de la validation")
 
+    } finally {
+      setIsSubmitting(false)
     }
 
   }
@@ -292,9 +257,10 @@ export default function StockExitTab({ locationId }) {
 
       <button
         onClick={handleValidateExit}
+        disabled={isSubmitting}
         className="bg-slate-900 text-white px-6 py-2 rounded-lg"
       >
-        Valider les sorties
+        {isSubmitting ? "Validation..." : "Valider les sorties"}
       </button>
 
       {message && (

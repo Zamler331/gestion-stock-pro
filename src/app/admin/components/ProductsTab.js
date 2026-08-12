@@ -137,7 +137,7 @@ export default function ProductsTab() {
 
     try {
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("products")
         .insert([{
           name: newProductName,
@@ -148,18 +148,6 @@ export default function ProductsTab() {
         .single()
 
       if (error) throw error
-
-      const { data: locations } = await supabase
-        .from("locations")
-        .select("id")
-
-      const stocksPayload = (locations || []).map(loc => ({
-        product_id: data.id,
-        location_id: loc.id,
-        quantity: 0
-      }))
-
-      await supabase.from("stocks").insert(stocksPayload)
 
       setNewProductName("")
       setNewProductCategory("")

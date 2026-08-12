@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import {
+  adjustStockLevel,
+  recordStockExit,
+} from "@/lib/services/atomicStockService"
 
 export default function MovementsTab({ locationId }) {
 
@@ -28,14 +32,14 @@ export default function MovementsTab({ locationId }) {
   async function fetchProducts() {
 
     const { data } = await supabase
-      .from("stocks")
-      .select(`
-        product_id,
-        products ( id, name )
-      `)
+      .from("current_stock_levels")
+      .select("product_id, product_name, quantity")
       .eq("location_id", locationId)
 
-    setProducts(data || [])
+    setProducts((data || []).map((row) => ({
+      ...row,
+      products: { id: row.product_id, name: row.product_name },
+    })))
   }
 
   async function fetchMovements() {
@@ -70,55 +74,38 @@ export default function MovementsTab({ locationId }) {
 
       const qty = parseInt(quantity)
 
-      const { data: stock } = await supabase
-        .from("stocks")
-        .select("*")
-        .eq("product_id", selectedProduct)
-        .eq("location_id", locationId)
-        .single()
+      const stock = products.find((item) => item.product_id === selectedProduct)
 
       if (!stock) {
         setMessage("Stock introuvable ❌")
         return
       }
 
-      let newQuantity = stock.quantity
-
       if (type === "sortie") {
         if (stock.quantity < qty) {
           setMessage("Stock insuffisant ❌")
           return
         }
-        newQuantity = stock.quantity - qty
+        await recordStockExit({
+          productId: selectedProduct,
+          locationId,
+          quantity: qty,
+          annotation,
+        })
+      } else {
+        await adjustStockLevel({
+          productId: selectedProduct,
+          locationId,
+          targetQuantity: qty,
+          annotation,
+        })
       }
-
-      if (type === "correction") {
-        newQuantity = qty
-      }
-
-      // Update stock
-      await supabase
-        .from("stocks")
-        .update({ quantity: newQuantity })
-        .eq("id", stock.id)
-
-      // Insert movement
-      const { data: { user } } =
-        await supabase.auth.getUser()
-
-      await supabase.from("movements").insert([{
-        product_id: selectedProduct,
-        type: type,
-        quantity: type === "sortie" ? -qty : newQuantity - stock.quantity,
-        source_location_id: locationId,
-        user_id: user.id,
-        annotation
-      }])
 
       setMessage("Mouvement enregistré ✅")
       setQuantity("")
       setAnnotation("")
       fetchMovements()
+      fetchProducts()
 
     } finally {
       setIsSubmitting(false)

@@ -1,5 +1,8 @@
 import { getDB } from "./offlineDB"
-import { supabase } from "@/lib/supabase"
+import {
+  createActionId,
+  createOrderAtomic,
+} from "@/lib/services/atomicStockService"
 
 let syncing = false
 
@@ -14,10 +17,12 @@ export async function syncQueue() {
 
     const db = await getDB()
     const actions = await db.getAll("queue")
+    const actionKeys = await db.getAllKeys("queue")
 
     console.log("Queue length:", actions.length)
 
-    for (const action of actions) {
+    for (let index = 0; index < actions.length; index += 1) {
+      const action = actions[index]
 
       if (!action.items || action.items.length === 0) {
         console.warn("Action sans items, skip", action)
@@ -28,49 +33,25 @@ export async function syncQueue() {
       /* Création commande      */
       /* ====================== */
 
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          destination_location_id: action.destination_location_id,
-          status: "pending"
+      try {
+        const actionId = action.action_id || createActionId()
+        if (!action.action_id) {
+          await db.put("queue", { ...action, action_id: actionId }, actionKeys[index])
+        }
+        const orderId = await createOrderAtomic({
+          actionId,
+          destinationLocationId: action.destination_location_id,
+          items: action.items,
         })
-        .select()
-        .single()
-
-      if (orderError || !order) {
-        console.error("Erreur création commande:", orderError)
-        continue
+        await db.delete("queue", actionKeys[index])
+        console.log("Commande synchronisée:", orderId)
+      } catch (error) {
+        console.error("Erreur synchronisation commande:", error)
       }
-
-      /* ====================== */
-      /* Création items         */
-      /* ====================== */
-
-      const items = action.items.map(item => ({
-        ...item,
-        order_id: order.id
-      }))
-
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(items)
-
-      if (itemsError) {
-        console.error("Erreur insertion items:", itemsError)
-        continue
-      }
-
-      console.log("Commande synchronisée:", order.id)
 
     }
 
-    /* ====================== */
-    /* Vider queue locale     */
-    /* ====================== */
-
-    await db.clear("queue")
-
-    console.log("Queue vidée")
+    console.log("Synchronisation de la queue terminée")
 
   } catch (err) {
 

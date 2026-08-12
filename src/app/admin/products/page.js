@@ -78,7 +78,7 @@ export default function AdminProductsPage() {
   async function handleAddProduct() {
   if (!newName || !newCategory) return
 
-  const { data: productData, error } = await supabase
+  const { error } = await supabase
     .from("products")
     .insert([
       {
@@ -90,22 +90,6 @@ export default function AdminProductsPage() {
     .single()
 
   if (error) return
-
-  const newProductId = productData.id
-
-  // 🔥 récupérer toutes les locations
-  const { data: locations } = await supabase
-    .from("locations")
-    .select("id")
-
-  // 🔥 créer les stocks à 0
-  const stockRows = locations.map(loc => ({
-    product_id: newProductId,
-    location_id: loc.id,
-    quantity: 0
-  }))
-
-  await supabase.from("stocks").insert(stockRows)
 
   setNewName("")
   setNewCategory("")
