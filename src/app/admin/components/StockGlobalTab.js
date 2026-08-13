@@ -11,48 +11,40 @@ export default function StockGlobalTab() {
   })
 
   useEffect(() => {
-    fetchAlerts()
-  }, [])
+    let cancelled = false
 
-  async function fetchAlerts() {
-    try {
-      setLoading(true)
+    getGlobalStockView()
+      .then((data) => {
+        if (cancelled) return
+        const products = data?.products || []
+        const outProducts = products.filter((product) => {
+          const total = Object.values(product.locations || {}).reduce(
+            (sum, loc) => sum + Number(loc?.quantity || 0),
+            0
+          )
+          return total === 0
+        })
 
-      const data = await getGlobalStockView()
-      const products = data?.products || []
-
-      const outProducts = []
-
-      products.forEach((product) => {
-        const locationValues = Object.values(product.locations || {})
-
-        const total = locationValues.reduce(
-          (sum, loc) => sum + Number(loc?.quantity || 0),
-          0
-        )
-
-        const item = {
-          product_id: product.product_id,
-          name: product.name,
-          total,
-          isOut: total === 0,
-        }
-
-        if (item.isOut) outProducts.push(item)
+        setAlerts({
+          out: outProducts.map((product) => ({
+            product_id: product.product_id,
+            name: product.name,
+          })),
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error("Erreur fetchAlerts:", err)
+        setAlerts({ out: [] })
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
 
-      setAlerts({
-        out: outProducts,
-      })
-    } catch (err) {
-      console.error("Erreur fetchAlerts:", err)
-      setAlerts({
-        out: [],
-      })
-    } finally {
-      setLoading(false)
+    return () => {
+      cancelled = true
     }
-  }
+  }, [])
 
   if (loading) {
     return <div>Chargement...</div>
@@ -60,6 +52,15 @@ export default function StockGlobalTab() {
 
   return (
     <div className="space-y-12">
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-sm text-blue-900">
+        <div className="font-semibold">Correction manuelle des stocks</div>
+        <p className="mt-1 text-blue-800">
+          Modifiez directement une quantité, notamment dans les colonnes des
+          réserves, puis validez la ligne. Toutes les modifications de la ligne
+          sont enregistrées ensemble ou annulées ensemble en cas d&apos;erreur.
+        </p>
+      </div>
+
       <div className="grid md:grid-cols-1 gap-6">
         <div className="bg-white border border-red-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">

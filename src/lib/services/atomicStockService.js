@@ -114,6 +114,17 @@ export function adjustStockLevel({
   }, actionId)
 }
 
+export function adjustStockLevels({
+  actionId = null,
+  adjustments,
+  annotation = "Correction manuelle depuis le stock global",
+}) {
+  return callIdempotentRpc("adjust_stock_levels", {
+    p_adjustments: adjustments,
+    p_annotation: annotation,
+  }, actionId)
+}
+
 export function adjustStockBatch({
   actionId = null,
   batchId,

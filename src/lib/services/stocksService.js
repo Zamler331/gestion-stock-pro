@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/supabase"
 import { getDB } from "@/lib/offline/offlineDB"
-import { adjustStockLevel } from "@/lib/services/atomicStockService"
+import {
+  adjustStockLevel,
+  adjustStockLevels,
+} from "@/lib/services/atomicStockService"
 
 export async function getGlobalStockView() {
   try {
@@ -174,5 +177,33 @@ export async function adjustStockAtLocation({
     targetQuantity: Number(newQuantity),
   })
 
+  return true
+}
+
+export async function adjustStocksAtLocations(adjustments) {
+  if (!Array.isArray(adjustments) || adjustments.length === 0) {
+    throw new Error("Aucune correction à enregistrer")
+  }
+
+  const normalizedAdjustments = adjustments.map((adjustment) => {
+    const targetQuantity = Number(adjustment.newQuantity)
+
+    if (
+      !adjustment.productId ||
+      !adjustment.locationId ||
+      !Number.isInteger(targetQuantity) ||
+      targetQuantity < 0
+    ) {
+      throw new Error("Correction de stock invalide")
+    }
+
+    return {
+      product_id: adjustment.productId,
+      location_id: adjustment.locationId,
+      target_quantity: targetQuantity,
+    }
+  })
+
+  await adjustStockLevels({ adjustments: normalizedAdjustments })
   return true
 }

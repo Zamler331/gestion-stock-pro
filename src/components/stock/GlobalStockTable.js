@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import {
   getGlobalStockView,
-  adjustStockAtLocation,
+  adjustStocksAtLocations,
 } from "@/lib/services/stocksService"
 
 const CATEGORY_ORDER = [
@@ -182,6 +182,8 @@ export default function GlobalStockTable({
       setSavingRow(product.product_id)
       setMessage("")
 
+      const adjustments = []
+
       for (const location of editableLocations) {
         const key = `${product.product_id}_${location.id}`
         const newQty = Number(drafts[key] ?? 0)
@@ -192,15 +194,22 @@ export default function GlobalStockTable({
           throw new Error(`Quantité invalide pour ${product.name}`)
         }
 
-        await adjustStockAtLocation({
+        adjustments.push({
           productId: product.product_id,
           locationId: location.id,
           newQuantity: newQty,
         })
       }
 
+      if (adjustments.length === 0) {
+        setMessage("Aucune modification à enregistrer")
+        return
+      }
+
+      await adjustStocksAtLocations(adjustments)
+
       await fetchData()
-      setMessage("Stock mis à jour ✅")
+      setMessage("Toutes les corrections de la ligne ont été enregistrées")
     } catch (err) {
       console.error(err)
       setMessage(err.message || "Erreur")

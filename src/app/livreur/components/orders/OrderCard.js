@@ -85,43 +85,40 @@ export default function OrderCard({ order, onValidated }) {
   }, [order.order_items])
 
   useEffect(() => {
-    fetchReserves()
-  }, [])
+    let cancelled = false
 
-  useEffect(() => {
-    setCheckedItems(
-      Object.fromEntries(
-        order.order_items.map((item) => [item.id, !!item.is_prepared])
-      )
-    )
-  }, [order.order_items])
-
-  useEffect(() => {
-    const isDesktop =
-      typeof window !== "undefined" ? window.innerWidth >= 768 : true
-
-    setOpenCategories((prev) => {
-      const next = { ...prev }
-
-      groupedItems.forEach(({ category }) => {
-        if (next[category] === undefined) {
-          next[category] = isDesktop
-        }
-      })
-
-      return next
-    })
-  }, [groupedItems])
-
-  async function fetchReserves() {
-    const { data } = await supabase
+    supabase
       .from("locations")
       .select("*")
       .eq("type", "reserve")
       .order("name")
+      .then(({ data }) => {
+        if (!cancelled) setReserves(data || [])
+      })
 
-    setReserves(data || [])
-  }
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const isDesktop = window.innerWidth >= 768
+    const timeoutId = window.setTimeout(() => {
+      setOpenCategories((prev) => {
+        const next = { ...prev }
+
+        groupedItems.forEach(({ category }) => {
+          if (next[category] === undefined) {
+            next[category] = isDesktop
+          }
+        })
+
+        return next
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [groupedItems])
 
   function handleQuantityChange(itemId, value) {
     setDeliveryQuantities((prev) => ({
@@ -205,6 +202,12 @@ export default function OrderCard({ order, onValidated }) {
         <p className="text-sm text-slate-500">
           Envoyée le {new Date(order.created_at).toLocaleString("fr-FR")}
         </p>
+      </div>
+
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+        Saisissez la quantité réellement remise au pôle. Vous pouvez valider
+        cette quantité même si la réserve choisie est insuffisante : la réserve
+        restera à zéro et le manque sera signalé à l&apos;administration.
       </div>
 
       <div className="space-y-4">

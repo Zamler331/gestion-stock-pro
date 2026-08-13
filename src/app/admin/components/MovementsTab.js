@@ -14,32 +14,31 @@ export default function MovementsTab() {
   const [locationFilter, setLocationFilter] = useState("all")
 
   useEffect(() => {
-    fetchMovements()
+    let cancelled = false
+
+    supabase
+      .from("movements")
+      .select(`
+        *,
+        products ( id, name ),
+        source:locations!movements_source_location_id_fkey ( id, name ),
+        destination:locations!movements_destination_location_id_fkey ( id, name )
+      `)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          console.error("Erreur fetch movements:", error)
+        } else {
+          setMovements(data || [])
+        }
+        setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
-
-  async function fetchMovements() {
-
-  setLoading(true)
-
-  const { data, error } = await supabase
-    .from("movements")
-    .select(`
-      *,
-      products ( id, name ),
-      source:locations!movements_source_location_id_fkey ( id, name ),
-      destination:locations!movements_destination_location_id_fkey ( id, name )
-    `)
-    .order("created_at", { ascending: false })
-
-  if (error) {
-    console.error("Erreur fetch movements:", error)
-    setLoading(false)
-    return
-  }
-
-  setMovements(data || [])
-  setLoading(false)
-}
 
 const allLocations = Array.from(
   new Map(
@@ -74,8 +73,10 @@ const allLocations = Array.from(
         return `${base} bg-orange-100 text-orange-700`
       case "annulation":
         return `${base} bg-red-100 text-red-700`
+      case "ecart_stock":
+        return `${base} bg-red-100 text-red-800`
       case "sortie":
-  return `${base} bg-gray-200 text-gray-800`
+        return `${base} bg-gray-200 text-gray-800`
       default:
         return `${base} bg-gray-100 text-gray-600`
     }
@@ -199,6 +200,7 @@ const allLocations = Array.from(
           <option value="entry">Entrée fournisseur</option>
           <option value="correction">Correction</option>
           <option value="annulation">Annulation</option>
+          <option value="ecart_stock">Écart de stock</option>
           <option value="sortie">Sortie</option>
         </select>
 
@@ -228,6 +230,7 @@ const allLocations = Array.from(
               <th className="px-4 py-3 text-center">Quantité</th>
               <th className="px-4 py-3 text-center">Source</th>
               <th className="px-4 py-3 text-center">Destination</th>
+              <th className="px-4 py-3 text-left">Détail</th>
               <th className="px-4 py-3 text-center">Date</th>
             </tr>
           </thead>
@@ -254,16 +257,16 @@ const allLocations = Array.from(
                 </td>
 
                 <td className={`px-4 py-3 text-center font-semibold ${
-  m.type === "sortie"
-    ? "text-red-600"
-    : "text-green-600"
-}`}>
-
-  {m.type === "sortie"
-    ? `-${m.quantity}`
-    : `+${m.quantity}`}
-
-</td>
+                  m.type === "sortie" || m.type === "ecart_stock"
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}>
+                  {m.type === "ecart_stock"
+                    ? `Manque ${m.quantity}`
+                    : m.type === "sortie"
+                      ? `-${m.quantity}`
+                      : `+${m.quantity}`}
+                </td>
 
                 <td className="px-4 py-3 text-center">
                   {m.source?.name || "-"}
@@ -271,6 +274,10 @@ const allLocations = Array.from(
 
                 <td className="px-4 py-3 text-center">
                   {m.destination?.name || "-"}
+                </td>
+
+                <td className="max-w-sm px-4 py-3 text-slate-600">
+                  {m.annotation || "-"}
                 </td>
 
                 <td className="px-4 py-3 text-center text-gray-500">
