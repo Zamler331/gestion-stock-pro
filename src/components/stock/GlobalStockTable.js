@@ -67,9 +67,10 @@ export default function GlobalStockTable({
 
       const nextDrafts = {}
       nextProducts.forEach((product) => {
-        Object.entries(product.locations || {}).forEach(([locationId, locData]) => {
-          nextDrafts[`${product.product_id}_${locationId}`] =
-            Number(locData?.quantity ?? 0)
+        nextLocations.forEach((location) => {
+          nextDrafts[`${product.product_id}_${location.id}`] = Number(
+            product.locations?.[location.id]?.quantity ?? 0
+          )
         })
       })
       setDrafts(nextDrafts)
@@ -255,9 +256,14 @@ export default function GlobalStockTable({
             items.some((product) => product.locations?.[l.id] !== undefined)
           )
 
-        const shownReserveLocations = reserveLocations.filter((l) =>
-          items.some((product) => product.locations?.[l.id] !== undefined)
-        )
+        const shownReserveLocations =
+          editable && editableTypes.includes("reserve")
+            ? reserveLocations
+            : reserveLocations.filter((l) =>
+                items.some(
+                  (product) => product.locations?.[l.id] !== undefined
+                )
+              )
 
         const isOpen = openCategories[category] ?? true
 
