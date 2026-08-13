@@ -5,6 +5,30 @@ import {
   adjustStockLevels,
 } from "@/lib/services/atomicStockService"
 
+const PAGE_SIZE = 500
+
+async function fetchAllPages(createQuery) {
+  const rows = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await createQuery().range(
+      from,
+      from + PAGE_SIZE - 1
+    )
+
+    if (error) throw error
+
+    const page = data || []
+    rows.push(...page)
+
+    if (page.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+
+  return rows
+}
+
 export async function getGlobalStockView() {
   try {
     if (!navigator.onLine) {
@@ -19,24 +43,23 @@ export async function getGlobalStockView() {
       }
     }
 
-    const { data: locations, error: locationsError } = await supabase
-      .from("locations")
-      .select("*")
-      .order("name")
+    const [locations, visibility] = await Promise.all([
+      fetchAllPages(() =>
+        supabase
+          .from("locations")
+          .select("*")
+          .order("id", { ascending: true })
+      ),
+      fetchAllPages(() =>
+        supabase
+          .from("product_location_settings")
+          .select("product_id, location_id")
+          .order("product_id", { ascending: true })
+          .order("location_id", { ascending: true })
+      ),
+    ])
 
-    if (locationsError) {
-      console.error("Erreur locations:", locationsError)
-      return { products: [], locations: [] }
-    }
-
-    const { data: visibility, error: visibilityError } = await supabase
-      .from("product_location_settings")
-      .select("product_id, location_id")
-
-    if (visibilityError) {
-      console.error("Erreur visibilité:", visibilityError)
-      return { products: [], locations: locations || [] }
-    }
+    locations.sort((a, b) => a.name.localeCompare(b.name, "fr"))
 
     const visibleMap = {}
 
@@ -57,20 +80,31 @@ export async function getGlobalStockView() {
       }
     }
 
-    const { data: productsData, error: productsError } = await supabase
-      .from("products")
-      .select(`
-        id,
-        name,
-        packaging,
-        categories ( name )
-      `)
-      .in("id", visibleProductIds)
+    const [allProductsData, allLevels] = await Promise.all([
+      fetchAllPages(() =>
+        supabase
+          .from("products")
+          .select(`
+            id,
+            name,
+            packaging,
+            categories ( name )
+          `)
+          .order("id", { ascending: true })
+      ),
+      fetchAllPages(() =>
+        supabase
+          .from("current_stock_levels")
+          .select("product_id, location_id, quantity")
+          .order("product_id", { ascending: true })
+          .order("location_id", { ascending: true })
+      ),
+    ])
 
-    if (productsError) {
-      console.error("Erreur products:", productsError)
-      return { products: [], locations: locations || [] }
-    }
+    const visibleProductIdSet = new Set(visibleProductIds)
+    const productsData = allProductsData.filter((product) =>
+      visibleProductIdSet.has(product.id)
+    )
 
     const productInfoMap = {}
 
@@ -78,15 +112,9 @@ export async function getGlobalStockView() {
       productInfoMap[product.id] = product
     })
 
-    const { data: levels, error: levelsError } = await supabase
-      .from("current_stock_levels")
-      .select("product_id, location_id, quantity")
-      .in("product_id", visibleProductIds)
-
-    if (levelsError) {
-      console.error("Erreur niveaux de stock:", levelsError)
-      return { products: [], locations: locations || [] }
-    }
+    const levels = allLevels.filter((level) =>
+      visibleProductIdSet.has(level.product_id)
+    )
 
     const productsMap = {}
 
