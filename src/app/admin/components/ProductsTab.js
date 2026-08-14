@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { fetchAllPages } from "@/lib/services/paginationService"
 
 export default function ProductsTab() {
 
@@ -24,50 +25,62 @@ export default function ProductsTab() {
   }, [])
 
   async function fetchData() {
+    try {
+      const [productData, categoryData, poleData, visibilityData] =
+        await Promise.all([
+          fetchAllPages(() =>
+            supabase
+              .from("products")
+              .select("id, name, category_id, packaging")
+              .order("name", { ascending: true })
+              .order("id", { ascending: true })
+          ),
+          fetchAllPages(() =>
+            supabase
+              .from("categories")
+              .select("*")
+              .order("name", { ascending: true })
+              .order("id", { ascending: true })
+          ),
+          fetchAllPages(() =>
+            supabase
+              .from("locations")
+              .select("*")
+              .eq("type", "pole")
+              .order("name", { ascending: true })
+              .order("id", { ascending: true })
+          ),
+          fetchAllPages(() =>
+            supabase
+              .from("product_location_settings")
+              .select("product_id, location_id")
+              .order("product_id", { ascending: true })
+              .order("location_id", { ascending: true })
+          ),
+        ])
 
-    const { data: productData } = await supabase
-      .from("products")
-      .select(`
-        id,
-        name,
-        category_id,
-        packaging
-      `)
-      .order("name")
+      const visibilityMap = {}
 
-    const { data: categoryData } = await supabase
-      .from("categories")
-      .select("*")
-      .order("name")
+      visibilityData.forEach(v => {
+        if (!visibilityMap[v.product_id]) {
+          visibilityMap[v.product_id] = {}
+        }
 
-    const { data: poleData } = await supabase
-      .from("locations")
-      .select("*")
-      .eq("type", "pole")
-      .order("name")
+        visibilityMap[v.product_id][v.location_id] = true
+      })
 
-    const { data: visibilityData } = await supabase
-      .from("product_location_settings")
-      .select("*")
+      const enrichedProducts = productData.map(p => ({
+        ...p,
+        visibility: visibilityMap[p.id] || {}
+      }))
 
-    const visibilityMap = {}
-
-    visibilityData?.forEach(v => {
-      if (!visibilityMap[v.product_id]) {
-        visibilityMap[v.product_id] = {}
-      }
-
-      visibilityMap[v.product_id][v.location_id] = true
-    })
-
-    const enrichedProducts = productData?.map(p => ({
-      ...p,
-      visibility: visibilityMap[p.id] || {}
-    }))
-
-    setProducts(enrichedProducts || [])
-    setCategories(categoryData || [])
-    setPoles(poleData || [])
+      setProducts(enrichedProducts)
+      setCategories(categoryData)
+      setPoles(poleData)
+    } catch (error) {
+      console.error("Erreur chargement produits :", error)
+      alert("Impossible de charger la liste complète des produits")
+    }
   }
 
   async function createCategory() {
@@ -173,26 +186,31 @@ export default function ProductsTab() {
   }
 
   async function toggleVisibility(productId, locationId, isVisible) {
+    try {
+      const query = isVisible
+        ? supabase
+            .from("product_location_settings")
+            .upsert(
+              { product_id: productId, location_id: locationId },
+              {
+                onConflict: "product_id,location_id",
+                ignoreDuplicates: true,
+              }
+            )
+        : supabase
+            .from("product_location_settings")
+            .delete()
+            .eq("product_id", productId)
+            .eq("location_id", locationId)
 
-    if (isVisible) {
-
-      await supabase
-        .from("product_location_settings")
-        .insert([{
-          product_id: productId,
-          location_id: locationId
-        }])
-
-    } else {
-
-      await supabase
-        .from("product_location_settings")
-        .delete()
-        .eq("product_id", productId)
-        .eq("location_id", locationId)
+      const { error } = await query
+      if (error) throw error
+    } catch (error) {
+      console.error("Erreur modification visibilité :", error)
+      alert("La visibilité n'a pas pu être modifiée")
+    } finally {
+      await fetchData()
     }
-
-    fetchData()
   }
 
   async function updateCategory(productId, categoryId) {

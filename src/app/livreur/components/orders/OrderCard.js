@@ -204,12 +204,6 @@ export default function OrderCard({ order, onValidated }) {
         </p>
       </div>
 
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-        Saisissez la quantité réellement remise au pôle. Vous pouvez valider
-        cette quantité même si la réserve choisie est insuffisante : la réserve
-        restera à zéro et le manque sera signalé à l&apos;administration.
-      </div>
-
       <div className="space-y-4">
         {groupedItems.map(({ category, items }) => {
           const isOpen = openCategories[category] ?? true

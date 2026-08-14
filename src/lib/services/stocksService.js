@@ -4,30 +4,7 @@ import {
   adjustStockLevel,
   adjustStockLevels,
 } from "@/lib/services/atomicStockService"
-
-const PAGE_SIZE = 500
-
-async function fetchAllPages(createQuery) {
-  const rows = []
-  let from = 0
-
-  while (true) {
-    const { data, error } = await createQuery().range(
-      from,
-      from + PAGE_SIZE - 1
-    )
-
-    if (error) throw error
-
-    const page = data || []
-    rows.push(...page)
-
-    if (page.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-
-  return rows
-}
+import { fetchAllPages } from "@/lib/services/paginationService"
 
 export async function getGlobalStockView() {
   try {
@@ -126,6 +103,7 @@ export async function getGlobalStockView() {
         name: info?.name || "Produit",
         packaging: info?.packaging || null,
         category: info?.categories?.name || "Sans catégorie",
+        visible_location_ids: visibleMap[productId] || [],
         locations: {},
       }
     })

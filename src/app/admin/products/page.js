@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
+import { fetchAllPages } from "@/lib/services/paginationService"
 
 export default function AdminProductsPage() {
   const router = useRouter()
@@ -135,9 +136,13 @@ export default function AdminProductsPage() {
 }
 
 async function fetchVisibility() {
-  const { data } = await supabase
-    .from("product_location_settings")
-    .select("product_id, location_id")
+  const data = await fetchAllPages(() =>
+    supabase
+      .from("product_location_settings")
+      .select("product_id, location_id")
+      .order("product_id", { ascending: true })
+      .order("location_id", { ascending: true })
+  )
 
   const map = {}
 
@@ -151,9 +156,13 @@ async function fetchVisibility() {
 
 async function toggleVisibility(productId, locationId, isChecked) {
   if (isChecked) {
-    await supabase.from("product_location_settings").insert([
-      { product_id: productId, location_id: locationId }
-    ])
+    await supabase.from("product_location_settings").upsert(
+      { product_id: productId, location_id: locationId },
+      {
+        onConflict: "product_id,location_id",
+        ignoreDuplicates: true,
+      }
+    )
   } else {
     await supabase
       .from("product_location_settings")

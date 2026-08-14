@@ -259,19 +259,30 @@ export default function OrdersTab() {
   const orderedGroupedEntries = useMemo(() => {
     const entries = Object.entries(grouped)
 
-    return entries.sort(([catA], [catB]) => {
-      const indexA = CATEGORY_ORDER.indexOf(catA)
-      const indexB = CATEGORY_ORDER.indexOf(catB)
+    return entries
+      .sort(([catA], [catB]) => {
+        const indexA = CATEGORY_ORDER.indexOf(catA)
+        const indexB = CATEGORY_ORDER.indexOf(catB)
 
-      const aKnown = indexA !== -1
-      const bKnown = indexB !== -1
+        const aKnown = indexA !== -1
+        const bKnown = indexB !== -1
 
-      if (aKnown && bKnown) return indexA - indexB
-      if (aKnown) return -1
-      if (bKnown) return 1
+        if (aKnown && bKnown) return indexA - indexB
+        if (aKnown) return -1
+        if (bKnown) return 1
 
-      return catA.localeCompare(catB, "fr")
-    })
+        return catA.localeCompare(catB, "fr")
+      })
+      .map(([category, items]) => [
+        category,
+        [...items].sort((a, b) =>
+          (a.products?.name || "").localeCompare(
+            b.products?.name || "",
+            "fr",
+            { sensitivity: "base", numeric: true }
+          )
+        ),
+      ])
   }, [grouped])
 
   function getOrdersByCategory() {

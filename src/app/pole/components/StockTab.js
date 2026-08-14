@@ -3,28 +3,9 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
-const CATEGORY_ORDER = [
-  "Epicerie",
-  "Paninis",
-  "Frais",
-  "Surgelé",
-  "Boissons",
-  "Boissons (NICO)",
-  "Glaces (cônes)",
-  "Glaces (boules)",
-  "Granités/Frozzen",
-  "Confiseries",
-  "Matériel",
-  "Sans catégorie",
-]
-
 export default function StockTab({ locationId }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (locationId) fetchStocks()
-  }, [locationId])
 
   async function fetchStocks() {
     try {
@@ -121,28 +102,12 @@ export default function StockTab({ locationId }) {
         }
       })
 
-      const sortedRows = Object.values(merged).sort((a, b) => {
-        const categoryA = a.category || "Sans catégorie"
-        const categoryB = b.category || "Sans catégorie"
-
-        const indexA = CATEGORY_ORDER.indexOf(categoryA)
-        const indexB = CATEGORY_ORDER.indexOf(categoryB)
-
-        const aKnown = indexA !== -1
-        const bKnown = indexB !== -1
-
-        if (aKnown && bKnown && indexA !== indexB) {
-          return indexA - indexB
-        }
-
-        if (aKnown && !bKnown) return -1
-        if (!aKnown && bKnown) return 1
-
-        const categoryCompare = categoryA.localeCompare(categoryB, "fr")
-        if (categoryCompare !== 0) return categoryCompare
-
-        return a.name.localeCompare(b.name, "fr")
-      })
+      const sortedRows = Object.values(merged).sort((a, b) =>
+        a.name.localeCompare(b.name, "fr", {
+          sensitivity: "base",
+          numeric: true,
+        })
+      )
 
       setRows(sortedRows)
     } catch (err) {
@@ -152,6 +117,18 @@ export default function StockTab({ locationId }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!locationId) return
+
+    const timeoutId = window.setTimeout(() => {
+      fetchStocks()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+    // fetchStocks reads the locationId that triggers this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId])
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">

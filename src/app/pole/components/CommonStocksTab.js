@@ -9,16 +9,22 @@ export default function CommonStocksTab({ locationId }) {
   const [search, setSearch] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
 
-  useEffect(() => {
-    if (locationId) fetchCommonStocks()
-  }, [locationId])
-
   async function fetchCommonStocks() {
     const data = await getGlobalStockView()
 
     setProducts(data?.products || [])
     setLocations(data?.locations || [])
   }
+
+  useEffect(() => {
+    if (!locationId) return
+
+    const timeoutId = window.setTimeout(() => {
+      fetchCommonStocks()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [locationId])
 
   const poles = useMemo(
     () => locations.filter((location) => location.type === "pole"),
@@ -36,8 +42,8 @@ export default function CommonStocksTab({ locationId }) {
   )
 
   const visibleProducts = useMemo(() => {
-    return products.filter(
-      (product) => product.locations?.[locationId] !== undefined
+    return products.filter((product) =>
+      product.visible_location_ids?.includes(locationId)
     )
   }, [products, locationId])
 
@@ -67,7 +73,7 @@ export default function CommonStocksTab({ locationId }) {
   }, [visibleProducts, search, selectedCategory])
 
   const groupedStocks = useMemo(() => {
-    return filteredStocks.reduce((acc, product) => {
+    const grouped = filteredStocks.reduce((acc, product) => {
       const category = product.category || "Sans catégorie"
 
       if (!acc[category]) acc[category] = []
@@ -75,6 +81,25 @@ export default function CommonStocksTab({ locationId }) {
 
       return acc
     }, {})
+
+    return Object.fromEntries(
+      Object.entries(grouped)
+        .sort(([categoryA], [categoryB]) =>
+          categoryA.localeCompare(categoryB, "fr", {
+            sensitivity: "base",
+            numeric: true,
+          })
+        )
+        .map(([category, items]) => [
+          category,
+          items.sort((a, b) =>
+            (a.name || "").localeCompare(b.name || "", "fr", {
+              sensitivity: "base",
+              numeric: true,
+            })
+          ),
+        ])
+    )
   }, [filteredStocks])
 
   return (
