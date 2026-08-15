@@ -279,7 +279,6 @@ export default function OrderCard({ order, onValidated }) {
                           <input
                             type="number"
                             min="0"
-                            max={item.quantity_ordered}
                             value={deliveredQty}
                             onChange={(e) =>
                               handleQuantityChange(item.id, e.target.value)

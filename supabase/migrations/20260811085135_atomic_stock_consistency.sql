@@ -958,7 +958,7 @@ begin
   perform * from private.require_app_user(array['admin', 'livreur']);
   select * into item_row from public.order_items where id = p_item_id for update;
   if not found then raise exception 'Article introuvable'; end if;
-  if p_quantity_delivered < 0 or p_quantity_delivered > item_row.quantity_ordered then
+  if p_quantity_delivered < 0 then
     raise exception 'Quantité livrée invalide' using errcode = '22023';
   end if;
   update public.order_items
@@ -1015,7 +1015,7 @@ begin
     select 1
     from jsonb_to_recordset(p_deliveries) as d(item_id uuid, reserve_id uuid, quantity integer)
     left join public.order_items oi on oi.id = d.item_id and oi.order_id = p_order_id
-    where oi.id is null or d.quantity < 0 or d.quantity > oi.quantity_ordered
+    where oi.id is null or d.quantity < 0
       or (d.quantity > 0 and d.reserve_id is null)
   ) then
     raise exception 'Détail de livraison invalide';

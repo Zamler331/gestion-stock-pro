@@ -1,156 +1,34 @@
--- Une livraison doit refléter la quantité physiquement remise au pôle,
--- même si le stock informatique de la réserve est insuffisant. La réserve
--- est consommée jusqu'à zéro et le manque est journalisé sans créer de stock
--- négatif. Les corrections du tableau Stock global sont regroupées dans une
--- seule transaction afin d'éviter les enregistrements partiels.
+-- Une livraison reflète la quantité physiquement remise au pôle, même si
+-- elle dépasse la quantité initialement commandée.
 
-create or replace function public.adjust_stock_levels(
-  p_action_id uuid,
-  p_adjustments jsonb,
-  p_annotation text default 'Correction manuelle depuis le stock global'
+create or replace function public.set_order_item_prepared(
+  p_item_id uuid,
+  p_is_prepared boolean,
+  p_quantity_delivered integer
 )
-returns uuid
+returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  actor record;
-  existing_type text;
-  adjustment_row record;
-  current_quantity integer;
-  delta integer;
-  movement_id uuid;
-  changed_count integer := 0;
+  item_row record;
 begin
-  select * into actor from private.require_app_user(array['admin']);
-  perform private.lock_action(p_action_id);
+  perform * from private.require_app_user(array['admin', 'livreur']);
+  select * into item_row
+  from public.order_items
+  where id = p_item_id
+  for update;
 
-  select operation_type into existing_type
-  from private.stock_operations
-  where action_id = p_action_id;
-
-  if found then
-    if existing_type <> 'adjust_stock_levels' then
-      raise exception 'Identifiant déjà utilisé pour une autre opération';
-    end if;
-    return p_action_id;
+  if not found then raise exception 'Article introuvable'; end if;
+  if p_quantity_delivered < 0 then
+    raise exception 'Quantité livrée invalide' using errcode = '22023';
   end if;
 
-  if p_adjustments is null
-    or jsonb_typeof(p_adjustments) <> 'array'
-    or jsonb_array_length(p_adjustments) = 0
-    or exists (
-      select 1
-      from jsonb_to_recordset(p_adjustments)
-        as x(product_id uuid, location_id uuid, target_quantity integer)
-      where x.product_id is null
-        or x.location_id is null
-        or x.target_quantity is null
-        or x.target_quantity < 0
-    )
-    or exists (
-      select x.product_id, x.location_id
-      from jsonb_to_recordset(p_adjustments)
-        as x(product_id uuid, location_id uuid, target_quantity integer)
-      group by x.product_id, x.location_id
-      having count(*) > 1
-    ) then
-    raise exception 'Corrections de stock invalides' using errcode = '22023';
-  end if;
-
-  if exists (
-    select 1
-    from jsonb_to_recordset(p_adjustments)
-      as x(product_id uuid, location_id uuid, target_quantity integer)
-    left join public.products p on p.id = x.product_id
-    left join public.locations l on l.id = x.location_id
-    where p.id is null or l.id is null
-  ) then
-    raise exception 'Produit ou emplacement introuvable';
-  end if;
-
-  -- Toutes les clés sont verrouillées dans un ordre stable avant la première
-  -- mutation, ce qui rend la correction complète atomique et sans interblocage.
-  for adjustment_row in
-    select x.product_id, x.location_id
-    from jsonb_to_recordset(p_adjustments)
-      as x(product_id uuid, location_id uuid, target_quantity integer)
-    order by x.product_id, x.location_id
-  loop
-    perform private.lock_stock_key(
-      adjustment_row.product_id,
-      adjustment_row.location_id
-    );
-  end loop;
-
-  for adjustment_row in
-    select x.product_id, x.location_id, x.target_quantity
-    from jsonb_to_recordset(p_adjustments)
-      as x(product_id uuid, location_id uuid, target_quantity integer)
-    order by x.product_id, x.location_id
-  loop
-    current_quantity := private.available_stock(
-      adjustment_row.product_id,
-      adjustment_row.location_id
-    );
-    delta := adjustment_row.target_quantity - current_quantity;
-
-    if delta = 0 then
-      continue;
-    end if;
-
-    insert into public.movements (
-      product_id,
-      type,
-      quantity,
-      source_location_id,
-      destination_location_id,
-      user_id,
-      annotation,
-      operation_id
-    ) values (
-      adjustment_row.product_id,
-      case when delta < 0 then 'sortie' else 'correction' end,
-      abs(delta),
-      case when delta < 0 then adjustment_row.location_id else null end,
-      case when delta > 0 then adjustment_row.location_id else null end,
-      actor.user_id,
-      p_annotation,
-      p_action_id
-    ) returning id into movement_id;
-
-    if delta < 0 then
-      perform * from private.consume_stock(
-        adjustment_row.product_id,
-        adjustment_row.location_id,
-        abs(delta)
-      );
-    else
-      insert into public.stock_batches (
-        product_id,
-        location_id,
-        quantity,
-        source_movement_id
-      ) values (
-        adjustment_row.product_id,
-        adjustment_row.location_id,
-        delta,
-        movement_id
-      );
-    end if;
-
-    changed_count := changed_count + 1;
-  end loop;
-
-  insert into private.stock_operations (action_id, operation_type, result)
-  values (
-    p_action_id,
-    'adjust_stock_levels',
-    jsonb_build_object('changed_count', changed_count)
-  );
-
-  return p_action_id;
+  update public.order_items
+  set is_prepared = p_is_prepared,
+      quantity_delivered = p_quantity_delivered
+  where id = p_item_id;
 end;
 $$;
 
@@ -393,14 +271,13 @@ end;
 $$;
 
 comment on function public.deliver_order_atomic(uuid, uuid, jsonb) is
-  'Livre la quantité physique complète, plafonne la réserve à zéro et journalise tout manque en ecart_stock.';
+  'Livre toute quantité physique remise, y compris au-delà de la commande, plafonne la réserve à zéro et journalise tout manque en ecart_stock.';
 
-revoke execute on function public.adjust_stock_levels(uuid, jsonb, text)
+revoke execute on function public.set_order_item_prepared(uuid, boolean, integer)
   from public, anon;
 revoke execute on function public.deliver_order_atomic(uuid, uuid, jsonb)
   from public, anon;
-
-grant execute on function public.adjust_stock_levels(uuid, jsonb, text)
+grant execute on function public.set_order_item_prepared(uuid, boolean, integer)
   to authenticated;
 grant execute on function public.deliver_order_atomic(uuid, uuid, jsonb)
   to authenticated;
