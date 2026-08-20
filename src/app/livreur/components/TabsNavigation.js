@@ -6,6 +6,7 @@ export default function TabsNavigation({
   
   const tabs = [
     { id: "orders", label: "Commandes / Transferts" },
+    { id: "history", label: "Historique" },
     { id: "entries", label: "Entrées" },
     { id: "dlc", label: "Paninis" },
     { id: "stock", label: "Stock" },

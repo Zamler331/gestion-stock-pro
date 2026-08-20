@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 
 import TabsNavigation from "./components/TabsNavigation"
 import OrdersTransfersTab from "./components/OrdersTransfersTab"
+import DeliveryHistoryTab from "./components/DeliveryHistoryTab"
 import EntriesTab from "./components/EntriesTab"
 import StockTab from "./components/StockTab"
 import MessagingTab from "./components/MessagingTab"
@@ -95,6 +96,12 @@ async function fetchUnreadMessagesCount(profileLocationId) {
         <div className="space-y-8">
           {activeTab === "orders" && (
             <OrdersTransfersTab locationId={locationId} />
+          )}
+
+          {activeTab === "history" && (
+            <DeliveryHistoryTab
+              onOrderReopened={() => setActiveTab("orders")}
+            />
           )}
 
           {activeTab === "delivery" && <FreeTransferTab role="livreur" />}

@@ -210,3 +210,12 @@ export function deliverOrderAtomic({
     p_deliveries: deliveries,
   }, actionId)
 }
+
+export function reopenDeliveredOrderAtomic({
+  actionId = null,
+  orderId,
+}) {
+  return callIdempotentRpc("reopen_delivered_order_atomic", {
+    p_order_id: orderId,
+  }, actionId)
+}
