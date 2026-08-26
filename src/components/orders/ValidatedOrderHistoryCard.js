@@ -31,7 +31,7 @@ export default function ValidatedOrderHistoryCard({
   )
 
   return (
-    <Card className="p-6 space-y-5">
+    <Card className="space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h3 className="text-lg font-semibold text-slate-900">
@@ -49,7 +49,7 @@ export default function ValidatedOrderHistoryCard({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
-        <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="hidden grid-cols-[minmax(0,1fr)_5rem_5rem] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid">
           <span>Produit</span>
           <span className="text-center">Demandé</span>
           <span className="text-center">Livré</span>
@@ -64,19 +64,31 @@ export default function ValidatedOrderHistoryCard({
             return (
               <div
                 key={item.id}
-                className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] items-center gap-3 px-4 py-3 text-sm"
+                className="space-y-2 px-4 py-3 text-sm sm:grid sm:grid-cols-[minmax(0,1fr)_5rem_5rem] sm:items-center sm:gap-3 sm:space-y-0"
               >
-                <span className="truncate font-medium text-slate-800">
+                <span className="block break-words font-medium leading-snug text-slate-800 sm:truncate">
                   {item.products?.name || "Produit inconnu"}
                 </span>
-                <span className="text-center text-slate-500">{ordered}</span>
-                <span
-                  className={`text-center font-semibold ${
-                    isDifferent ? "text-amber-700" : "text-slate-800"
-                  }`}
-                >
-                  {delivered}
-                </span>
+                <div className="grid grid-cols-2 gap-2 sm:contents">
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 sm:block sm:bg-transparent sm:p-0 sm:text-center">
+                    <span className="text-xs text-slate-500 sm:hidden">
+                      Demandé
+                    </span>
+                    <span className="text-slate-500">{ordered}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 sm:block sm:bg-transparent sm:p-0 sm:text-center">
+                    <span className="text-xs text-slate-500 sm:hidden">
+                      Livré
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        isDifferent ? "text-amber-700" : "text-slate-800"
+                      }`}
+                    >
+                      {delivered}
+                    </span>
+                  </div>
+                </div>
               </div>
             )
           })}

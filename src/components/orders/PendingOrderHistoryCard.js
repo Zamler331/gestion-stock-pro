@@ -80,7 +80,7 @@ export default function PendingOrderHistoryCard({ order, onSave }) {
   }
 
   return (
-    <Card className="space-y-5 p-6">
+    <Card className="space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h3 className="text-lg font-semibold text-slate-900">
@@ -97,7 +97,7 @@ export default function PendingOrderHistoryCard({ order, onSave }) {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
-        <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="hidden grid-cols-[minmax(0,1fr)_6rem] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid">
           <span>Produit</span>
           <span className="text-center">Quantité</span>
         </div>
@@ -106,21 +106,28 @@ export default function PendingOrderHistoryCard({ order, onSave }) {
           {sortedItems.map((item) => (
             <div
               key={item.id}
-              className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 px-4 py-3"
+              className="flex flex-col gap-2 px-4 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_6rem] sm:items-center sm:gap-3"
             >
-              <span className="truncate text-sm font-medium text-slate-800">
+              <span className="break-words text-sm font-medium leading-snug text-slate-800 sm:truncate">
                 {item.products?.name || "Produit inconnu"}
               </span>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={quantities[item.id] ?? ""}
-                onChange={(event) => changeQuantity(item.id, event.target.value)}
-                disabled={saving || preparationStarted}
-                aria-label={`Quantité de ${item.products?.name || "ce produit"}`}
-                className="w-full rounded-lg border border-slate-300 px-2 py-2 text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800 disabled:bg-slate-100"
-              />
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 p-2 sm:block sm:bg-transparent sm:p-0">
+                <span className="text-xs text-slate-500 sm:hidden">
+                  Quantité
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quantities[item.id] ?? ""}
+                  onChange={(event) =>
+                    changeQuantity(item.id, event.target.value)
+                  }
+                  disabled={saving || preparationStarted}
+                  aria-label={`Quantité de ${item.products?.name || "ce produit"}`}
+                  className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800 disabled:bg-slate-100 sm:w-full"
+                />
+              </div>
             </div>
           ))}
         </div>
