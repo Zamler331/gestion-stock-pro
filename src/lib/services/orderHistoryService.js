@@ -3,11 +3,12 @@ import { supabase } from "@/lib/supabase"
 const DEFAULT_HISTORY_LIMIT = 25
 const MAX_HISTORY_LIMIT = 100
 
-export async function getValidatedOrders({
+async function getOrdersByStatus({
+  status,
   destinationLocationId = null,
   limit = DEFAULT_HISTORY_LIMIT,
   offset = 0,
-} = {}) {
+}) {
   const safeLimit = Math.min(
     Math.max(Number.parseInt(limit, 10) || DEFAULT_HISTORY_LIMIT, 1),
     MAX_HISTORY_LIMIT
@@ -33,6 +34,7 @@ export async function getValidatedOrders({
         quantity_ordered,
         quantity_delivered,
         status,
+        is_prepared,
         products:product_id (
           id,
           name,
@@ -41,10 +43,15 @@ export async function getValidatedOrders({
         )
       )
     `)
-    .eq("status", "delivered")
-    .not("validated_at", "is", null)
-    .order("validated_at", { ascending: false })
+    .eq("status", status)
+    .order(status === "delivered" ? "validated_at" : "created_at", {
+      ascending: false,
+    })
     .range(safeOffset, safeOffset + safeLimit)
+
+  if (status === "delivered") {
+    query = query.not("validated_at", "is", null)
+  }
 
   if (destinationLocationId) {
     query = query.eq("destination_location_id", destinationLocationId)
@@ -62,4 +69,12 @@ export async function getValidatedOrders({
     orders: rows.slice(0, safeLimit),
     hasMore: rows.length > safeLimit,
   }
+}
+
+export function getValidatedOrders(options = {}) {
+  return getOrdersByStatus({ ...options, status: "delivered" })
+}
+
+export function getPendingOrderHistory(options = {}) {
+  return getOrdersByStatus({ ...options, status: "pending" })
 }

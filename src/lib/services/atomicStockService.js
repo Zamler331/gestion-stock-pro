@@ -219,3 +219,14 @@ export function reopenDeliveredOrderAtomic({
     p_order_id: orderId,
   }, actionId)
 }
+
+export function updatePendingOrderAtomic({
+  actionId = null,
+  orderId,
+  items,
+}) {
+  return callIdempotentRpc("update_pending_order_atomic", {
+    p_order_id: orderId,
+    p_items: items,
+  }, actionId)
+}

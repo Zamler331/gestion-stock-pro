@@ -3,6 +3,7 @@
 import { useState } from "react"
 
 import OrdersTab from "./OrdersTab"
+import PoleOrderHistoryTab from "./PoleOrderHistoryTab"
 import DlcTab from "./DlcTab"
 import MessagingTab from "./MessagingTab"
 
@@ -11,6 +12,7 @@ export default function PoleTabs({ locationId }) {
 
   const tabs = [
     { id: "orders", label: "Commandes" },
+    { id: "history", label: "Historique" },
     { id: "dlc", label: "Paninis" },
     { id: "messages", label: "Messagerie" },
   ]
@@ -38,6 +40,9 @@ export default function PoleTabs({ locationId }) {
 
       <div>
         {activeTab === "orders" && <OrdersTab />}
+        {activeTab === "history" && (
+          <PoleOrderHistoryTab locationId={locationId} />
+        )}
         {activeTab === "dlc" && <DlcTab locationId={locationId} canAddBatch={false} allowLocationSelect={false} />}
         {activeTab === "messages" && <MessagingTab locationId={locationId} />}
       </div>
